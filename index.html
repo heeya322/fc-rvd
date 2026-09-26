@@ -136,7 +136,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -162,9 +162,11 @@ const players = () => S.members.filter(m => m.approved && m.active && m.position
 const actives = () => S.members.filter(m => m.approved && m.active);
 const POS = {field:'필드', goleiro:'골레이로', coach:'감독'};
 const ROLE = {member:'회원', staff:'운영진', admin:'관리자'};
-const STATUS = {normal:'정규', once:'1회참여', rest:'휴식', goleiro:'골레이로'};
+const STATUS = {normal:'정규', once:'1회참여', rest:'휴식', goleiro:'골레이로', fixed:'고정'};
 const RAW = {normal:40000, once:20000, rest:20000};
-const rateOf = m => (100 - (m?.fee_discount || 0)) / 100 * (m?.position === 'goleiro' ? 0.5 : 1);
+const rateOf = m => (100 - (m?.fee_discount || 0)) / 100;
+const fixedOf = m => m?.fee_fixed ?? ((m?.position === 'goleiro' || ['staff','admin'].includes(m?.role)) ? 20000 : null);
+const fixedWhy = m => m?.fee_fixed != null ? '개별 지정' : m?.position === 'goleiro' ? '골레이로' : '운영진';
 const feeOf = (m, st) => Math.round(RAW[st] * rateOf(m));
 const man = n => n % 10000 === 0 ? n / 10000 + '만' : (n / 10000).toFixed(1) + '만';
 const FINE = {no_response:'미응답 불참', same_day_cancel:'당일 취소', no_show:'참석 후 불참', late:'지각', etc:'기타'};
@@ -708,8 +710,8 @@ async function renderDues(main) {
   main.innerHTML = `
     <div class="card row between"><div><div class="muted small">모임통장 잔액</div><div class="big">${bal == null ? '기록 없음' : won(bal)}</div></div>
       <div style="text-align:right"><div class="muted small">${monthLabel(cm)} 납부</div><div class="big">${sum?.total ? `${sum.paid}/${sum.total}명` : '-'}</div></div></div>
-    ${me.position === 'coach' ? '' : `<h2>이번 달·다음 달 회비 선택</h2><div class="card list">${statusBox(cm)}${statusBox(nm)}</div>
-      <p class="muted small" style="margin:-4px 4px 0">정규 4만(2회 이상) · 1회참여 2만 · 휴식 2만(연속 휴식 중 5개월 납부 후 면제, 10만원 일괄 가능)${me.position === 'goleiro' ? ' · 골레이로 50% 감면 적용' : ''}${disc ? ` · 개인 감면 ${disc}% 적용` : ''}.
+    ${me.position === 'coach' ? '' : fixedOf(me) != null ? `<h2>회비</h2><div class="card"><div class="row between"><div><b>고정 회비</b><div class="muted small">${fixedWhy(me)} · 참여 횟수와 관계없이 매달 같은 금액</div></div><b class="big">${won(fixedOf(me))}</b></div><button class="btn sm" style="margin-top:8px" onclick="noteModal('${cm}')">특이사항 남기기</button></div>` : `<h2>이번 달·다음 달 회비 선택</h2><div class="card list">${statusBox(cm)}${statusBox(nm)}</div>
+      <p class="muted small" style="margin:-4px 4px 0">정규 4만(2회 이상) · 1회참여 2만 · 휴식 2만(연속 휴식 중 5개월 납부 후 면제, 10만원 일괄 가능)${disc ? ` · 개인 감면 ${disc}% 적용` : ''}. 골레이로·운영진은 2만원 고정.
       월말에 정기모임 실제 출석으로 정산하고, 차액은 환불 없이 다음 달로 이월됩니다. 특이사항은 납입일(1일) 전에 남겨야 이월이 인정됩니다.</p>`}
     ${me.credit ? `<div class="card row between" style="margin-top:10px"><span>내 적립금(이월·선납)</span><b>${won(me.credit)}</b></div>` : ''}
     <h2>내 벌금</h2>
@@ -746,7 +748,7 @@ async function adminMembers(el) {
   const pend = S.members.filter(m => !m.approved && m.active);
   const act = S.members.filter(m => m.approved && m.active);
   const out = S.members.filter(m => m.approved && !m.active);
-  const row = m => `<div class="item" onclick="memberModal('${m.id}')"><div class="grow"><b>${esc(m.name)}</b> ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}<div class="muted small">${POS[m.position]} · 아이디 ${esc(m.login_id)}${m.joined_on ? ' · ' + esc(joinedText(m)) : ' · 입단일 미입력'}${m.bank_name && m.bank_name !== m.name ? ' · 입금자명 ' + esc(m.bank_name) : ''}${m.credit ? ' · 적립 ' + won(m.credit) : ''}${m.fee_discount ? ' · 감면 ' + m.fee_discount + '%' : ''}</div></div></div>`;
+  const row = m => `<div class="item" onclick="memberModal('${m.id}')"><div class="grow"><b>${esc(m.name)}</b> ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}<div class="muted small">${POS[m.position]} · 아이디 ${esc(m.login_id)}${m.joined_on ? ' · ' + esc(joinedText(m)) : ' · 입단일 미입력'}${m.bank_name && m.bank_name !== m.name ? ' · 입금자명 ' + esc(m.bank_name) : ''}${m.credit ? ' · 적립 ' + won(m.credit) : ''}${fixedOf(m) != null && m.position !== 'coach' ? ' · 고정 ' + won(fixedOf(m)) : ''}</div></div></div>`;
   el.innerHTML = `${pend.length ? `<h2>가입 승인 대기</h2><div class="card list">${pend.map(m => `<div class="item"><div class="grow"><b>${esc(m.name)}</b><div class="muted small">아이디 ${esc(m.login_id)}${m.joined_on ? ' · 입단 ' + m.joined_on : ''}</div></div><button class="btn sm primary" onclick="approve('${m.id}',true)">승인</button><button class="btn sm danger" onclick="approve('${m.id}',false)">거절</button></div>`).join('')}</div>` : ''}
     <h2>활동 회원 ${act.length}명</h2>
     <input class="i" placeholder="이름·초성 검색" oninput="document.querySelectorAll('#mlist .item').forEach(x=>x.style.display=hit(x.querySelector('b').textContent,this.value)?'':'none')">
@@ -766,7 +768,7 @@ function memberModal(id) {
     ${adm ? `
       <label class="f" style="margin-top:18px">권한 (운영진 지정 · 관리자 위임)</label>
       <div class="row"><select class="i" id="mr"><option value="member">일반 회원</option><option value="staff">운영진 (일정·출석·경기·게스트·휴식 관리)</option><option value="admin">관리자 (전체 + 회비·권한)</option></select><button class="btn" onclick="saveRole('${id}')">변경</button></div>
-      <label class="f">회비 감면율 % (총무·주장 등, 골레이로 50%는 자동)</label><div class="row"><input class="i" id="mdc" type="number" min="0" max="100" value="${m.fee_discount || 0}"><button class="btn" onclick="saveDiscount('${id}')">변경</button></div>
+      <label class="f">고정 회비 (비우면 자동: 골레이로·운영진 2만원, 그 외 참여 횟수별)</label><div class="row"><input class="i" id="mfx" type="number" placeholder="자동${fixedOf({ ...m, fee_fixed: null }) != null ? ' (2만원 고정)' : ' (횟수별)'}" value="${m.fee_fixed ?? ''}"><button class="btn" onclick="saveFixed('${id}')">변경</button></div>
       <label class="f">적립금(선납) 직접 수정</label><div class="row"><input class="i" id="mc" type="number" value="${m.credit || 0}"><button class="btn" onclick="saveCredit('${id}')">변경</button></div>
       <label class="f">비밀번호 초기화</label><div class="row"><input class="i" id="mpw" placeholder="새 비밀번호 6자 이상"><button class="btn" onclick="resetPw('${id}')">변경</button></div>
       ${self ? '' : `<div class="row" style="margin-top:18px">${m.active ? `<button class="btn danger" style="flex:1" onclick="withdraw('${id}',false)">탈퇴 처리 (기록 유지)</button>` : `<button class="btn" style="flex:1" onclick="withdraw('${id}',true)">복귀 처리</button>`}<button class="btn danger" onclick="hardDelete('${id}')">계정 완전 삭제</button></div>`}` : ''}
@@ -784,6 +786,7 @@ async function saveRole(id) {
   await q(sb.rpc('admin_set_role', { p_member: id, p_role: r })); closeModal(); toast('권한을 바꿨습니다'); await refresh(); renderShell();
 }
 async function saveCredit(id) { await q(sb.rpc('admin_set_credit', { p_member: id, p_credit: parseInt(val('mc') || '0', 10) })); toast('적립금 변경 (미납분에 자동 차감)'); closeModal(); await refresh(); renderTab(); }
+async function saveFixed(id) { const v = val('mfx').trim(); await q(sb.rpc('admin_set_fixed_fee', { p_member: id, p_amount: v === '' ? null : parseInt(v, 10) })); toast('변경했습니다. 다음 청구 생성부터 반영됩니다', 4000); closeModal(); await refresh(); renderTab(); }
 async function saveDiscount(id) { await q(sb.rpc('staff_set_fee_discount', { p_member: id, p_pct: parseInt(val('mdc') || '0', 10) })); toast('감면율 변경. 다음 청구 생성부터 반영됩니다', 4000); closeModal(); await refresh(); renderTab(); }
 async function resetPw(id) { const pw = val('mpw'); if (pw.length < 6) return toast('6자 이상 입력하세요'); await q(sb.rpc('admin_reset_password', { p_member: id, p_password: pw })); toast('비밀번호를 바꿨습니다. 본인에게 알려주세요', 4000); }
 async function withdraw(id, back) {
@@ -852,7 +855,7 @@ async function adminRest(el) {
     <h2>회원별 이달 상태·특이사항</h2>
     <div class="card list">${ps.map(p => { const row = st.find(x => x.member_id === p.id); const s = row?.status || 'normal';
       const late = row?.note_at && new Date(row.note_at) >= new Date(`${m}-02T00:00:00+09:00`);
-      return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.name)}</b><div class="muted small">${POS[p.position]}</div></div><select class="i" style="width:auto" onchange="adminStatus('${p.id}','${m}',this.value)">${['normal', 'once', 'rest'].map(k => `<option value="${k}" ${s === k ? 'selected' : ''}>${STATUS[k]} ${won(feeOf(p, k))}</option>`).join('')}</select>
+      return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.name)}</b><div class="muted small">${POS[p.position]}</div></div>${fixedOf(p) != null ? `<span class="tag">고정 ${won(fixedOf(p))}</span>` : `<select class="i" style="width:auto" onchange="adminStatus('${p.id}','${m}',this.value)">${['normal', 'once', 'rest'].map(k => `<option value="${k}" ${s === k ? 'selected' : ''}>${STATUS[k]} ${won(feeOf(p, k))}</option>`).join('')}</select>`}
         ${row?.note ? `<div class="small" style="flex-basis:100%;margin-top:4px">📝 ${esc(row.note)} <span class="muted">(${fmt(row.note_at)}${late ? ' · <b style="color:var(--loss)">납입일 이후 작성</b>' : ''})</span></div>` : ''}</div>`; }).join('')}</div>
     <p class="muted small">청구가 이미 생성된 달을 바꾸면, 관리자가 회비 탭에서 '청구 다시 계산'을 눌러야 금액에 반영됩니다.</p>`;
 }
@@ -878,7 +881,7 @@ async function adminDues(el) {
       <button class="btn sm full" style="margin-top:8px" onclick="shareDuesNotice('${m}')">단톡방 회비 공지 공유</button>
       <div class="muted small" style="margin-top:8px">매월 말일쯤 다음 달 청구를 생성하세요. 회원 선택 상태(휴식 포함), 지난달 정기모임 출석, 감면율, 적립금을 반영합니다. 납부 기록은 유지됩니다. 회원별 '안내'를 누르면 개별 입금 안내 문구가 만들어집니다.</div></div>
     <div class="card list">${ps.map(p => { const d = rows.find(r => r.member_id === p.id); const s = st.find(x => x.member_id === p.id)?.status;
-      return `<div class="item"><div class="grow"><b>${esc(p.name)}</b><div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') : `선택: ${s ? (p.position === 'goleiro' && s === 'normal' ? '골레이로' : STATUS[s]) : '미선택'}`}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
+      return `<div class="item"><div class="grow"><b>${esc(p.name)}</b><div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') : (fixedOf(p) != null ? `고정 ${won(fixedOf(p))} (${fixedWhy(p)})` : `선택: ${s ? STATUS[s] : '미선택(정규)'}`)}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
       ${d ? `<b>${won(d.amount_due)}</b><button class="btn sm ${d.paid_amount >= d.amount_due ? '' : 'danger'}" onclick="togglePaid('${p.id}','${m}',${d.paid_amount >= d.amount_due})">${d.paid_amount >= d.amount_due ? '납부' : '미납'}</button><button class="btn sm" onclick="shareOne('${p.id}','${m}')">안내</button>` : ''}</div>`; }).join('')}</div>`;
   S._duesRows = rows;
 }
@@ -889,7 +892,7 @@ function shareOne(id, m) {
   share(`${p.name}님 ${monthLabel(m)} 회비 안내 🙂\n· ${STATUS[d.status_used] || ''} 회비 ${won(d.base)}${d.adjustment ? `\n· 지난달 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : ''}${d.paid_amount && remain ? `\n· 적립금·기납부 차감 -${won(d.paid_amount)}` : ''}${fsum ? `\n· 미납 벌금 ${won(fsum)} (${fs.map(f => FINE[f.kind]).join(', ')})` : ''}\n\n입금하실 금액: ${won(remain + fsum)}${remain + fsum === 0 ? ' (납부 완료!)' : ''}\n앱에서 확인 👉 ${appUrl()}`);
 }
 function shareDuesNotice(m) {
-  share(`[FC회전문] ${monthLabel(m)} 회비 안내\n📅 납입일: ${Number(m.slice(5))}월 1일\n· 정규 4만원 / 1회참여 2만원 / 휴식 2만원\n· 골레이로 50% 감면\n· 본인 금액(지난달 정산·벌금 포함)은 앱 회비 탭에서 확인해주세요\n· 부상·일정 등 특이사항은 납입일 전에 앱에 남겨주세요\n👉 ${appUrl()}`);
+  share(`[FC회전문] ${monthLabel(m)} 회비 안내\n📅 납입일: ${Number(m.slice(5))}월 1일\n· 정규 4만원 / 1회참여 2만원 / 휴식 2만원\n· 골레이로·운영진 2만원 고정\n· 본인 금액(지난달 정산·벌금 포함)은 앱 회비 탭에서 확인해주세요\n· 부상·일정 등 특이사항은 납입일 전에 앱에 남겨주세요\n👉 ${appUrl()}`);
 }
 async function genDues(m) { const n = await q(sb.rpc('generate_dues', { p_month: m })); toast(`${n}명 청구 완료`); await refresh(); renderTab(); }
 async function rematch() { const n = await q(sb.rpc('rematch_unknown')); toast(`미확인 ${n}건 다시 확인했습니다`); renderTab(); }
