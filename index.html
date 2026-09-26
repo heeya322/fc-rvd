@@ -153,7 +153,7 @@ input.i,select.i{min-height:44px}
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -331,6 +331,13 @@ async function reloadAndRender(...tables) {
 
 // ===== 계산 =====
 const evById = id => S.events.find(e => e.id === id);
+// 경기: 출전 = 출전 체크 + 출전 명단(쿼터)에 들어간 사람 / 응원 = 응원 체크 중 출전 안 한 사람
+function playedOf(eid) {
+  const set = new Set(S.att.filter(a => a.event_id === eid && !a.cheer).map(a => a.member_id));
+  const mt = S.matches.find(m => m.event_id === eid); if (mt) S.lineups.filter(l => l.match_id === mt.id).forEach(l => set.add(l.member_id));
+  return set;
+}
+function cheerOf(eid) { const p = playedOf(eid); return new Set(S.att.filter(a => a.event_id === eid && a.cheer && !p.has(a.member_id)).map(a => a.member_id)); }
 function statsFor(id) {
   const reg = new Set(S.events.filter(e => e.kind === 'regular').map(e => e.id));
   const mine = S.att.filter(a => a.member_id === id && reg.has(a.event_id));
@@ -365,7 +372,7 @@ function eventCard(e) {
   const gs = S.guests.filter(g => g.event_id === e.id);
   const pending = actives().length - yes.length - no.length - may.length;
   const mt = e.kind === 'match' ? S.matches.find(m => m.event_id === e.id) : null;
-  const attLabel = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '응원' : '참여';
+  const attLabel = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '출전·응원' : '참여';
   const head = past && att.length ? att.length : yes.length;
   return `<div class="card">
     <div class="row between"><span class="tag ${e.kind}">${KIND[e.kind]}</span>
@@ -376,7 +383,7 @@ function eventCard(e) {
     ${past ? '' : `<div class="rsvp"><button class="yes ${mine === 'attend' ? 'on' : ''}" ${lockAll ? 'disabled' : ''} onclick="rsvp(${e.id},'attend')">참석 ${yes.length}</button><button class="no ${mine === 'maybe' ? 'on' : ''}" ${closed ? 'disabled' : ''} onclick="rsvp(${e.id},'maybe')">미정 ${may.length}</button><button class="no ${mine === 'absent' ? 'on' : ''}" ${lockAll ? 'disabled' : ''} onclick="rsvp(${e.id},'absent')">불참 ${no.length}</button></div>
       ${dl ? `<div class="muted small" style="margin-top:4px">${closed ? (mine === 'maybe' ? '마감됨 · 미정이라 참석/불참으로 바꿀 수 있어요' : '오후 6:30 투표 마감') : '당일 오후 6:30 마감 · 무응답 불참 1만원, 8:10 이후 지각 5천원'}</div>` : ''}`}
     <div class="names">
-      ${att.length ? `${attLabel}(${att.length}): ${att.map(a => esc(nameOf(a.member_id))).join(', ')}<br>` : ''}
+      ${att.length ? (e.kind === 'match' ? (() => { const p = [...playedOf(e.id)], c = [...cheerOf(e.id)]; return `${p.length ? `출전(${p.length}): ${p.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}${c.length ? `응원(${c.length}): ${c.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}`; })() : `${attLabel}(${att.length}): ${att.map(a => esc(nameOf(a.member_id))).join(', ')}<br>`) : ''}
       ${!att.length || !past ? (yes.length ? `참석(${yes.length}): ${yes.map(r => esc(nameOf(r.member_id))).join(', ')}` : '참석 투표 없음') : ''}
       ${no.length && !past ? `<br>불참(${no.length}): ${no.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
       ${may.length && !past ? `<br>미정(${may.length}): ${may.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
@@ -434,6 +441,7 @@ function renderHome(main) {
   const [, dm, dd] = S.calDay.split('-').map(Number);
   main.innerHTML = `
     ${live ? (() => { const s = matchScore(live); return `<div class="board" onclick="openMatchView(${live.id})"><div class="meta">vs ${esc(live.opponent)}<span class="live">LIVE</span></div><div class="score"><div class="team">회전문</div><div class="num">${s.ours} : ${s.theirs}</div><div class="team">${esc(live.opponent)}</div></div></div>`; })() : ''}
+    ${isAdmin() && (() => { const lb = lastBackup(); return !lb || (Date.now() - new Date(lb + 'T00:00:00+09:00')) > 90 * 864e5; })() ? `<div class="card row between" style="border-color:var(--loss)" onclick="S.tab='admin';S.adminSub='settings';renderTab()"><span class="small">💾 3개월 넘게 데이터 백업을 안 했어요</span><span class="small" style="color:var(--loss)">백업하기 ›</span></div>` : ''}
     ${noticeCard()}
     ${calendarHtml()}
     <h2>${dm}월 ${dd}일 일정</h2>
@@ -544,6 +552,7 @@ async function saveEvent(id) {
 }
 async function delEvent(id) { if (!confirm('이 일정을 삭제할까요? 참석·출석·게스트·연결된 경기 기록도 함께 지워집니다.')) return; await q(sb.from('events').delete().eq('id', id)); closeModal(); await refresh(); renderTab(); }
 function attendanceModal(eid) {
+  if (evById(eid)?.kind === 'match') return matchAttendModal(eid);
   const e = evById(eid); const had = S.att.filter(a => a.event_id === eid).map(a => a.member_id);
   const pre = had.length ? had : S.rsvps.filter(r => r.event_id === eid && r.status === 'attend').map(r => r.member_id);
   const lbl = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '응원' : '참여';
@@ -551,6 +560,25 @@ function attendanceModal(eid) {
     <input class="i" style="margin-top:8px" placeholder="이름·초성 검색" oninput="document.querySelectorAll('#sheet .chk').forEach(l=>l.style.display=hit(l.dataset.n,this.value)?'':'none')">
     <div style="margin-top:4px">${actives().map(m => { const late = S.att.find(a => a.event_id === eid && a.member_id === m.id)?.late; return `<label class="chk" data-n="${esc(m.name)}"><input type="checkbox" value="${m.id}" ${pre.includes(m.id) ? 'checked' : ''}><span style="flex:1">${esc(m.name)} <span class="muted small">${POS[m.position]}</span></span>${e.kind === 'regular' ? `<span class="small" style="display:flex;align-items:center;gap:4px" onclick="event.stopPropagation()"><input type="checkbox" class="late" data-id="${m.id}" ${late ? 'checked' : ''} style="width:16px;height:16px">지각</span>` : ''}</label>`; }).join('')}</div>
     <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:#fff;padding-top:8px"><button class="btn primary" style="flex:1" onclick="saveAttendance(${eid})">${lbl} 저장</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+function matchAttendModal(eid) {
+  const e = evById(eid); const cur = S.att.filter(a => a.event_id === eid);
+  const mt = S.matches.find(m => m.event_id === eid); const lu = new Set(mt ? S.lineups.filter(l => l.match_id === mt.id).map(l => l.member_id) : []);
+  const rsvpYes = new Set(S.rsvps.filter(r => r.event_id === eid && r.status === 'attend').map(r => r.member_id));
+  S._ma = {};
+  actives().forEach(m => { const a = cur.find(x => x.member_id === m.id); S._ma[m.id] = lu.has(m.id) ? 'play' : a ? (a.cheer ? 'cheer' : 'play') : (!cur.length && rsvpYes.has(m.id) ? 'play' : ''); });
+  const row = m => `<div class="chk" data-n="${esc(m.name)}"><span style="flex:1">${esc(m.name)} <span class="muted small">${POS[m.position]}${lu.has(m.id) ? ' · 출전 명단' : ''}</span></span>
+    <div class="seg" style="width:150px" data-id="${m.id}">${[['play', '출전'], ['cheer', '응원']].map(([k, l]) => `<button class="${S._ma[m.id] === k ? 'on' : ''}" onclick="S._ma['${m.id}']=S._ma['${m.id}']==='${k}'?'':'${k}';this.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',S._ma['${m.id}']===b.dataset.k))" data-k="${k}">${l}</button>`).join('')}</div></div>`;
+  openModal(`<h3>출전·응원 체크</h3><div class="muted small">${esc(e.title)}${e.opponent ? ' vs ' + esc(e.opponent) : ''} · ${fmt(e.starts_at)}<br>뛴 사람은 '출전', 안 뛰고 응원 온 사람은 '응원'을 누르세요. 한 번 더 누르면 해제됩니다.<br>출전 → 출석 순위 / 응원 → 응원 순위 (회비 정산에는 반영 안 됨)${lu.size ? '<br>쿼터 출전 명단에 있는 사람은 자동으로 출전입니다.' : ''}</div>
+    <input class="i" style="margin-top:8px" placeholder="이름·초성 검색" oninput="document.querySelectorAll('#sheet .chk').forEach(l=>l.style.display=hit(l.dataset.n,this.value)?'':'none')">
+    <div style="margin-top:4px">${actives().map(row).join('')}</div>
+    <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:#fff;padding-top:8px"><button class="btn primary" style="flex:1" onclick="saveMatchAttend(${eid})">저장</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+async function saveMatchAttend(eid) {
+  const rows = Object.entries(S._ma).filter(([, v]) => v).map(([member_id, v]) => ({ event_id: eid, member_id, cheer: v === 'cheer' }));
+  await q(sb.from('attendance').delete().eq('event_id', eid));
+  if (rows.length) await q(sb.from('attendance').insert(rows));
+  closeModal(); toast(`출전 ${rows.filter(r => !r.cheer).length}명 · 응원 ${rows.filter(r => r.cheer).length}명 저장`); await reloadAndRender('attendance');
 }
 async function saveAttendance(eid) {
   const ids = [...document.querySelectorAll('#sheet .chk > input[type=checkbox]:checked')].map(i => i.value);
@@ -590,11 +618,11 @@ function renderMatches(main) {
   const r = record();
   const rankRows = arr => arr.length ? arr.map(([id, n], i) => `<div class="rank"><i>${i + 1}</i><span>${esc(nameOf(id))}</span><b>${n}</b></div>`).join('') : `<div class="empty">기록 없음</div>`;
   const cnt = f => { const c = {}; S.goals.forEach(g => { const id = f(g); if (id) c[id] = (c[id] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 5); };
-  const attEv = new Set(S.events.filter(e => e.kind === 'regular' || e.kind === 'match').map(e => e.id));
-  const attCnt = {}; S.att.filter(a => attEv.has(a.event_id)).forEach(a => { attCnt[a.member_id] = (attCnt[a.member_id] || 0) + 1; });
+  const attCnt = {}; const inc = (o, id) => { o[id] = (o[id] || 0) + 1; };
+  S.att.filter(a => evById(a.event_id)?.kind === 'regular').forEach(a => inc(attCnt, a.member_id));
+  const cheer = {};
+  S.events.filter(e => e.kind === 'match').forEach(e => { playedOf(e.id).forEach(id => inc(attCnt, id)); cheerOf(e.id).forEach(id => inc(cheer, id)); });
   const attRank = Object.entries(attCnt).filter(([id]) => players().some(p => p.id === id)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
-  const matchEv = new Set(S.events.filter(e => e.kind === 'match').map(e => e.id));
-  const cheer = {}; S.att.filter(a => matchEv.has(a.event_id)).forEach(a => { cheer[a.member_id] = (cheer[a.member_id] || 0) + 1; });
   const cheerRank = Object.entries(cheer).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
   const tagOf = m => m.status === 'live' ? ['match', 'LIVE'] : m.status === 'scheduled' ? ['scheduled', '예정'] : [matchScore(m).res, { W: '승', D: '무', L: '패' }[matchScore(m).res]];
   main.innerHTML = `
@@ -610,7 +638,7 @@ function renderMatches(main) {
       <div class="card"><b>📣 응원</b>${rankRows(cheerRank)}</div>
       <div class="card"><b>✅ 출석</b>${rankRows(attRank)}</div>
     </div>
-    <p class="muted small">응원: 경기에 온 횟수 · 출석: 정기모임 + 경기 모두 합친 횟수</p>`;
+    <p class="muted small">응원: 경기에 안 뛰고 응원 온 횟수 · 출석: 정기모임 출석 + 경기 출전 횟수</p>`;
 }
 function courtSvg(mid, qn, editable) {
   const lu = S.lineups.filter(l => l.match_id === mid && l.quarter === qn);
@@ -653,7 +681,7 @@ function renderMatchDetail(main, id) {
     <div class="card" style="margin-top:8px;background:#1d3272;border-color:#1d3272">${courtSvg(id, S.quarter, st)}
       ${st ? `<div class="row" style="margin-top:8px">${S.quarter > 1 ? `<button class="btn sm" style="flex:1" onclick="copyLineup(${id},${S.quarter})">${S.quarter - 1}Q 명단 복사</button>` : ''}<button class="btn sm" style="flex:1" onclick="clearLineup(${id},${S.quarter})">${S.quarter}Q 비우기</button></div>` : ''}</div>
     ${playedList.length ? `<div class="card"><b>출전 요약</b><div class="chipline">${playedList.map(([mid, set]) => `<span class="chip">${esc(nameOf(mid))} ${set.size}Q</span>`).join('')}</div></div>` : ''}
-    ${m.event_id ? (() => { const ch = S.att.filter(a => a.event_id === m.event_id); return `<h2>경기에 온 사람 ${ch.length}명</h2><div class="card">${ch.length ? `<div class="chipline">${ch.map(a => `<span class="chip">${esc(nameOf(a.member_id))}</span>`).join('')}</div>` : '<div class="empty">아직 체크 전입니다</div>'}${st ? `<button class="btn sm" style="margin-top:8px" onclick="attendanceModal(${m.event_id})">응원·참여 체크</button>` : ''}</div>`; })() : ''}
+    ${m.event_id ? (() => { const p = [...playedOf(m.event_id)], c = [...cheerOf(m.event_id)]; return `<h2>출전 ${p.length}명 · 응원 ${c.length}명</h2><div class="card">${p.length ? `<div class="small"><b>출전</b></div><div class="chipline">${p.map(id => `<span class="chip">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${c.length ? `<div class="small" style="margin-top:8px"><b>📣 응원</b></div><div class="chipline">${c.map(id => `<span class="chip g">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${!p.length && !c.length ? '<div class="empty">아직 체크 전입니다</div>' : ''}${st ? `<button class="btn sm" style="margin-top:8px" onclick="attendanceModal(${m.event_id})">출전·응원 체크</button>` : ''}</div>`; })() : ''}
     <h2>감독 피드백</h2>
     ${m.feedback ? `<div class="fb">${esc(m.feedback)}</div>` : `<div class="card empty">아직 피드백이 없습니다</div>`}
     ${st || isCoach() ? `<button class="btn sm" style="margin-top:8px" onclick="feedbackModal(${id})">${m.feedback ? '피드백 수정' : '피드백 작성'}</button>` : ''}
@@ -983,10 +1011,46 @@ async function adminPaste(el) {
     <h2>최근 받은 알림</h2><div class="card list">${logs.length ? logs.map(l => `<div class="item"><div class="grow"><div class="small"><b>${esc(l.result || '처리 중')}</b></div><div class="muted small" style="white-space:pre-wrap">${esc(((l.title || '') + ' ' + (l.body || '')).trim().slice(0, 160))}</div><div class="muted small">${fmt(l.received_at)}</div></div></div>`).join('') : `<div class="empty">받은 알림이 없습니다</div>`}</div>`;
 }
 async function doPaste() { const t = val('pt').trim(); if (!t) return; const r = await q(sb.rpc('admin_ingest_text', { p_text: t })); document.getElementById('pr').textContent = r; document.getElementById('pt').value = ''; toast(r, 4000); }
+// ===== 전체 데이터 백업 (엑셀) =====
+const BACKUP = [
+  ['members', '회원'], ['events', '일정'], ['rsvps', '참석투표'], ['rsvp_log', '투표기록'], ['attendance', '출석'],
+  ['event_guests', '게스트'], ['matches', '경기'], ['goals', '골'], ['lineups', '출전명단'], ['monthly_status', '월상태'],
+  ['dues', '회비'], ['transactions', '입출금'], ['fines', '벌금'], ['notices', '공지'], ['suggestions', '소리함'], ['notification_log', '알림기록']
+];
+function loadXlsx() {
+  return window.XLSX ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => no(new Error('엑셀 도구를 불러오지 못했습니다')); document.head.appendChild(sc); });
+}
+async function doBackup() {
+  const btn = document.getElementById('bkbtn'); if (btn) { btn.disabled = true; btn.textContent = '백업 만드는 중…'; }
+  try {
+    await loadXlsx();
+    const names = {}; (await fetchAll('members')).forEach(m => names[m.id] = m.name);
+    const idCols = ['member_id', 'scorer_id', 'assist_id'];
+    const wb = XLSX.utils.book_new(); let total = 0;
+    for (const [t, label] of BACKUP) {
+      let rows = [];
+      try { rows = await fetchAll(t); } catch (e) { rows = [{ 오류: e.message }]; }
+      rows = rows.map(r => { const o = {}; Object.entries(r).forEach(([k, v]) => { o[k] = v && typeof v === 'object' ? JSON.stringify(v) : v; if (t !== 'members' && idCols.includes(k) && names[v]) o[k + '_이름'] = names[v]; }); return o; });
+      total += rows.length;
+      XLSX.utils.book_append_sheet(wb, rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([['기록 없음']]), label);
+    }
+    const d = kst(Date.now()).date;
+    XLSX.writeFile(wb, `FC회전문_백업_${d}.xlsx`);
+    try { localStorage.setItem('fc_last_backup', d); } catch (e) {}
+    toast(`백업 완료 (${total}건). 다운로드 폴더를 확인하세요`, 4500);
+  } catch (e) { toast('백업 실패: ' + e.message, 5000); }
+  if (btn) { btn.disabled = false; btn.textContent = '전체 데이터 백업 (엑셀)'; }
+  renderTab();
+}
+function lastBackup() { try { return localStorage.getItem('fc_last_backup'); } catch (e) { return null; } }
 async function adminSettings(el) {
   const s = await q(sb.from('app_settings').select('*'));
   const secret = s.find(x => x.key === 'ingest_secret')?.value || '';
-  el.innerHTML = `<div class="card"><b>MacroDroid 자동 전송 정보</b><p class="muted small">MacroDroid의 HTTP 요청 설정에 사용합니다. 비밀키는 다른 사람에게 보이지 않게 하세요.</p>
+  const lb = lastBackup(); const old = !lb || (Date.now() - new Date(lb + 'T00:00:00+09:00')) > 90 * 864e5;
+  el.innerHTML = `<div class="card" ${old ? 'style="border-color:var(--loss)"' : ''}><b>데이터 백업</b><p class="muted small">회원·일정·출석·회비·입출금·벌금·경기 기록 등 모든 데이터를 엑셀 파일 하나로 내려받습니다(표마다 시트 1개). 분기에 한 번 정도 받아서 구글 드라이브 등에 보관하세요.</p>
+    <div class="small" style="margin-bottom:8px">${lb ? `마지막 백업: ${lb}` : '이 폰에서 백업한 기록 없음'}${old ? ' · <b style="color:var(--loss)">백업할 때가 됐어요</b>' : ''}</div>
+    <button class="btn primary full" id="bkbtn" onclick="doBackup()">전체 데이터 백업 (엑셀)</button></div>
+    <div class="card"><b>MacroDroid 자동 전송 정보</b><p class="muted small">MacroDroid의 HTTP 요청 설정에 사용합니다. 비밀키는 다른 사람에게 보이지 않게 하세요.</p>
     <label class="f">요청 주소</label><input class="i" readonly value="${esc(SUPABASE_URL)}/rest/v1/rpc/ingest_notification" onclick="this.select()">
     <label class="f">비밀키 (p_secret)</label><input class="i" readonly value="${esc(secret)}" onclick="this.select()"></div>
     <div class="card"><b>앱 주소</b><p class="muted small">회원들에게 공유하고, 폰 브라우저 메뉴에서 "홈 화면에 추가"를 누르게 하세요.</p><input class="i" readonly value="${esc(appUrl())}" onclick="this.select()"></div>`;
