@@ -136,7 +136,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -633,7 +633,16 @@ function renderMatchDetail(main, id) {
     <div class="row" style="flex-wrap:wrap;margin-top:16px">
       <button class="btn sm" onclick="shareMatch(${id})">단톡방 공유</button>
       ${st && m.event_id ? `<button class="btn sm" onclick="eventModal(${m.event_id})">경기 정보 수정</button>` : ''}
+      ${st ? `<button class="btn sm danger" onclick="deleteMatch(${id})">경기 삭제</button>` : ''}
     </div>`;
+}
+async function deleteMatch(id) {
+  const m = S.matches.find(x => x.id === id); if (!m) return;
+  const g = S.goals.filter(x => x.match_id === id).length;
+  if (!confirm(`vs ${m.opponent} 경기를 삭제할까요?\n골 ${g}개, 출전 명단, 감독 피드백도 함께 지워지고 되돌릴 수 없습니다.${m.event_id ? '\n일정 탭의 경기 일정도 같이 삭제됩니다.' : ''}`)) return;
+  if (m.event_id) await q(sb.from('events').delete().eq('id', m.event_id));
+  else await q(sb.from('matches').delete().eq('id', id));
+  S.openMatch = null; toast('경기를 삭제했습니다'); await refresh(); renderTab();
 }
 function addGoal(mid) {
   const inQ = S.lineups.filter(l => l.match_id === mid && l.quarter === S.quarter).map(l => l.member_id);
