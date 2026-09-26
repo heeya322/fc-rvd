@@ -125,6 +125,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tag.staff{background:#dde8f7;color:var(--court2)} .tag.admin{background:#fbe1ec;color:#b3245d}
 .tag.credit{background:#dff3f7;color:#13708a} .tag.scheduled{background:#e6ebf2;color:var(--sub)}
 .rsvp button:disabled{opacity:.4}
+
+/* 버튼·입력칸 크기 통일 */
+.rankgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rankgrid .card{margin:0;padding:12px}
+.rankgrid .rank{grid-template-columns:18px 1fr auto;font-size:13px}
+.rankgrid .empty{padding:10px 0;font-size:12px}
+.seg.wrap{flex-wrap:wrap;overflow:visible}
+.seg.wrap button{flex:1 0 22%}
+.btn{white-space:nowrap;flex-shrink:0;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:4px;line-height:1.2}
+.btn.sm{min-height:34px}
+.btn.full{display:flex}
+.row > .i{flex:1;min-width:0}
+input.i,select.i{min-height:44px}
+.chk input{flex-shrink:0}
+.tag{white-space:nowrap}
+.item b{white-space:nowrap}
+.item .grow b{white-space:normal}
 </style>
 </head>
 <body>
@@ -136,7 +153,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -301,7 +318,7 @@ function renderShell() {
     <nav>${tabs.map(([k, i, l]) => `<button data-tab="${k}" onclick="go('${k}')"><b>${i}</b>${l}</button>`).join('')}</nav>`;
   renderTab();
 }
-function go(tab) { S.tab = tab; S.selMode = false; S.sel.clear(); if (tab !== 'matches') S.openMatch = null; renderTab(); window.scrollTo(0, 0); }
+function go(tab) { S.tab = tab; S.selMode = false; S.sel.clear(); S.mSel = false; if (tab !== 'matches') S.openMatch = null; renderTab(); window.scrollTo(0, 0); }
 function renderTab() {
   const main = document.getElementById('main'); if (!main) return;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
@@ -348,7 +365,7 @@ function eventCard(e) {
   const gs = S.guests.filter(g => g.event_id === e.id);
   const pending = actives().length - yes.length - no.length - may.length;
   const mt = e.kind === 'match' ? S.matches.find(m => m.event_id === e.id) : null;
-  const attLabel = e.kind === 'regular' ? '출석' : '참여';
+  const attLabel = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '응원' : '참여';
   const head = past && att.length ? att.length : yes.length;
   return `<div class="card">
     <div class="row between"><span class="tag ${e.kind}">${KIND[e.kind]}</span>
@@ -529,8 +546,8 @@ async function delEvent(id) { if (!confirm('이 일정을 삭제할까요? 참�
 function attendanceModal(eid) {
   const e = evById(eid); const had = S.att.filter(a => a.event_id === eid).map(a => a.member_id);
   const pre = had.length ? had : S.rsvps.filter(r => r.event_id === eid && r.status === 'attend').map(r => r.member_id);
-  const lbl = e.kind === 'regular' ? '출석' : '참여';
-  openModal(`<h3>${lbl} ${had.length ? '수정' : '입력'}</h3><div class="muted small">${esc(e.title)} · ${fmt(e.starts_at)}<br>${e.kind === 'regular' ? '정기모임 출석은 회비 정산에 반영됩니다.' : '경기·기타 참여는 출석(회비)에 반영되지 않습니다.'}${had.length ? '' : '<br>참석 투표한 사람을 미리 체크해 두었습니다.'}</div>
+  const lbl = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '응원' : '참여';
+  openModal(`<h3>${lbl} ${had.length ? '수정' : '입력'}</h3><div class="muted small">${esc(e.title)} · ${fmt(e.starts_at)}<br>${e.kind === 'regular' ? '정기모임 출석은 회비 정산에 반영됩니다.' : (e.kind === 'match' ? '경기에 온 사람(뛴 사람·응원 온 사람 모두)을 체크하세요. 응원 순위에 들어가고, 출석(회비)에는 반영되지 않습니다.' : '기타 일정 참여는 출석(회비)에 반영되지 않습니다.')}${had.length ? '' : '<br>참석 투표한 사람을 미리 체크해 두었습니다.'}</div>
     <input class="i" style="margin-top:8px" placeholder="이름·초성 검색" oninput="document.querySelectorAll('#sheet .chk').forEach(l=>l.style.display=hit(l.dataset.n,this.value)?'':'none')">
     <div style="margin-top:4px">${actives().map(m => { const late = S.att.find(a => a.event_id === eid && a.member_id === m.id)?.late; return `<label class="chk" data-n="${esc(m.name)}"><input type="checkbox" value="${m.id}" ${pre.includes(m.id) ? 'checked' : ''}><span style="flex:1">${esc(m.name)} <span class="muted small">${POS[m.position]}</span></span>${e.kind === 'regular' ? `<span class="small" style="display:flex;align-items:center;gap:4px" onclick="event.stopPropagation()"><input type="checkbox" class="late" data-id="${m.id}" ${late ? 'checked' : ''} style="width:16px;height:16px">지각</span>` : ''}</label>`; }).join('')}</div>
     <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:#fff;padding-top:8px"><button class="btn primary" style="flex:1" onclick="saveAttendance(${eid})">${lbl} 저장</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
@@ -571,20 +588,29 @@ function linkGuest(gid, eid) {
 function renderMatches(main) {
   if (S.openMatch) return renderMatchDetail(main, S.openMatch);
   const r = record();
-  const rankRows = arr => arr.length ? arr.map(([id, n], i) => `<div class="rank"><i>${i + 1}</i><span>${esc(nameOf(id))}</span><b>${n}</b></div>`).join('') : `<div class="empty">아직 기록이 없습니다</div>`;
+  const rankRows = arr => arr.length ? arr.map(([id, n], i) => `<div class="rank"><i>${i + 1}</i><span>${esc(nameOf(id))}</span><b>${n}</b></div>`).join('') : `<div class="empty">기록 없음</div>`;
   const cnt = f => { const c = {}; S.goals.forEach(g => { const id = f(g); if (id) c[id] = (c[id] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 5); };
-  const attRank = players().map(m => [m.id, statsFor(m.id).total]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
-  const qRank = players().map(m => [m.id, statsFor(m.id).quarters]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + 'Q']);
+  const attEv = new Set(S.events.filter(e => e.kind === 'regular' || e.kind === 'match').map(e => e.id));
+  const attCnt = {}; S.att.filter(a => attEv.has(a.event_id)).forEach(a => { attCnt[a.member_id] = (attCnt[a.member_id] || 0) + 1; });
+  const attRank = Object.entries(attCnt).filter(([id]) => players().some(p => p.id === id)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
+  const matchEv = new Set(S.events.filter(e => e.kind === 'match').map(e => e.id));
+  const cheer = {}; S.att.filter(a => matchEv.has(a.event_id)).forEach(a => { cheer[a.member_id] = (cheer[a.member_id] || 0) + 1; });
+  const cheerRank = Object.entries(cheer).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
   const tagOf = m => m.status === 'live' ? ['match', 'LIVE'] : m.status === 'scheduled' ? ['scheduled', '예정'] : [matchScore(m).res, { W: '승', D: '무', L: '패' }[matchScore(m).res]];
   main.innerHTML = `
     <div class="card"><div class="big">${r.n}전 ${r.w}승 ${r.d}무 ${r.l}패</div><div class="muted">득점 ${r.gf} · 실점 ${r.ga} (종료된 경기 기준)</div></div>
-    ${isStaff() ? `<button class="btn primary full" onclick="eventModal();document.getElementById('ek').value='match';document.getElementById('ek').onchange()">+ 경기 추가 (일정에도 등록)</button>` : ''}
+    ${isStaff() ? `<div class="row"><button class="btn primary" style="flex:1" onclick="eventModal();document.getElementById('ek').value='match';document.getElementById('ek').onchange()">+ 경기 추가</button><button class="btn ${S.mSel ? 'danger' : ''}" onclick="S.mSel=!S.mSel;S.msel=new Set();renderTab()">${S.mSel ? '선택 취소' : '선택 삭제'}</button></div>` : ''}
     <h2>경기</h2>
-    <div class="card list">${S.matches.length ? S.matches.map(m => { const s = matchScore(m); const [c, l] = tagOf(m); return `<div class="item" onclick="openMatchView(${m.id})"><span class="tag ${c}">${l}</span><div class="grow"><b>vs ${esc(m.opponent)}</b><div class="muted small">${fmt(m.played_at)} · ${m.kind === 'tournament' ? '대회' + (m.tournament ? ' ' + esc(m.tournament) : '') : '친선'}</div></div><b style="font-size:18px">${m.status === 'scheduled' ? '-' : s.ours + ':' + s.theirs}</b></div>`; }).join('') : `<div class="empty">경기 기록이 없습니다</div>`}</div>
-    <h2>득점 순위</h2><div class="card">${rankRows(cnt(g => g.own_goal ? null : g.scorer_id))}</div>
-    <h2>어시스트 순위</h2><div class="card">${rankRows(cnt(g => g.assist_id))}</div>
-    <h2>출전 쿼터 순위</h2><div class="card">${rankRows(qRank)}</div>
-    <h2>정기모임 출석 순위</h2><div class="card">${rankRows(attRank)}</div>`;
+    ${S.mSel ? `<div class="card row between" style="border-color:var(--loss)"><span class="small">지울 경기를 체크하세요 · <b id="mselN">${S.msel.size}</b>개 선택</span><button class="btn sm danger" onclick="bulkDeleteMatches()">삭제</button></div>` : ''}
+    <div class="card list">${S.matches.length ? S.matches.map(m => { const s = matchScore(m); const [c, l] = tagOf(m); return `<div class="item" onclick="${S.mSel ? `this.querySelector('input').click()` : `openMatchView(${m.id})`}">${S.mSel ? `<input type="checkbox" style="width:20px;height:20px;accent-color:var(--loss)" ${S.msel.has(m.id) ? 'checked' : ''} onclick="event.stopPropagation();this.checked?S.msel.add(${m.id}):S.msel.delete(${m.id});document.getElementById('mselN').textContent=S.msel.size">` : ''}<span class="tag ${c}">${l}</span><div class="grow"><b>vs ${esc(m.opponent)}</b><div class="muted small">${fmt(m.played_at)} · ${m.kind === 'tournament' ? '대회' + (m.tournament ? ' ' + esc(m.tournament) : '') : '친선'}</div></div><b style="font-size:18px">${m.status === 'scheduled' ? '-' : s.ours + ':' + s.theirs}</b></div>`; }).join('') : `<div class="empty">경기 기록이 없습니다</div>`}</div>
+    <h2>순위</h2>
+    <div class="rankgrid">
+      <div class="card"><b>⚽ 득점</b>${rankRows(cnt(g => g.own_goal ? null : g.scorer_id))}</div>
+      <div class="card"><b>🅰️ 도움</b>${rankRows(cnt(g => g.assist_id))}</div>
+      <div class="card"><b>📣 응원</b>${rankRows(cheerRank)}</div>
+      <div class="card"><b>✅ 출석</b>${rankRows(attRank)}</div>
+    </div>
+    <p class="muted small">응원: 경기에 온 횟수 · 출석: 정기모임 + 경기 모두 합친 횟수</p>`;
 }
 function courtSvg(mid, qn, editable) {
   const lu = S.lineups.filter(l => l.match_id === mid && l.quarter === qn);
@@ -625,8 +651,9 @@ function renderMatchDetail(main, id) {
     <h2>쿼터별 출전 명단</h2>
     <div class="seg">${qs.map(n => `<button class="${S.quarter === n ? 'on' : ''}" onclick="S.quarter=${n};renderTab()">${n}Q</button>`).join('')}${st ? `<button onclick="S.extraQ++;S.quarter=${maxQ + 1};renderTab()">+</button>` : ''}</div>
     <div class="card" style="margin-top:8px;background:#1d3272;border-color:#1d3272">${courtSvg(id, S.quarter, st)}
-      ${st ? `<div class="row" style="margin-top:8px"><button class="btn sm" style="flex:1" onclick="copyLineup(${id},${S.quarter})">${S.quarter > 1 ? `${S.quarter - 1}Q 명단 복사` : '—'}</button><button class="btn sm" style="flex:1" onclick="clearLineup(${id},${S.quarter})">${S.quarter}Q 비우기</button></div>` : ''}</div>
+      ${st ? `<div class="row" style="margin-top:8px">${S.quarter > 1 ? `<button class="btn sm" style="flex:1" onclick="copyLineup(${id},${S.quarter})">${S.quarter - 1}Q 명단 복사</button>` : ''}<button class="btn sm" style="flex:1" onclick="clearLineup(${id},${S.quarter})">${S.quarter}Q 비우기</button></div>` : ''}</div>
     ${playedList.length ? `<div class="card"><b>출전 요약</b><div class="chipline">${playedList.map(([mid, set]) => `<span class="chip">${esc(nameOf(mid))} ${set.size}Q</span>`).join('')}</div></div>` : ''}
+    ${m.event_id ? (() => { const ch = S.att.filter(a => a.event_id === m.event_id); return `<h2>경기에 온 사람 ${ch.length}명</h2><div class="card">${ch.length ? `<div class="chipline">${ch.map(a => `<span class="chip">${esc(nameOf(a.member_id))}</span>`).join('')}</div>` : '<div class="empty">아직 체크 전입니다</div>'}${st ? `<button class="btn sm" style="margin-top:8px" onclick="attendanceModal(${m.event_id})">응원·참여 체크</button>` : ''}</div>`; })() : ''}
     <h2>감독 피드백</h2>
     ${m.feedback ? `<div class="fb">${esc(m.feedback)}</div>` : `<div class="card empty">아직 피드백이 없습니다</div>`}
     ${st || isCoach() ? `<button class="btn sm" style="margin-top:8px" onclick="feedbackModal(${id})">${m.feedback ? '피드백 수정' : '피드백 작성'}</button>` : ''}
@@ -635,6 +662,15 @@ function renderMatchDetail(main, id) {
       ${st && m.event_id ? `<button class="btn sm" onclick="eventModal(${m.event_id})">경기 정보 수정</button>` : ''}
       ${st ? `<button class="btn sm danger" onclick="deleteMatch(${id})">경기 삭제</button>` : ''}
     </div>`;
+}
+async function bulkDeleteMatches() {
+  if (!S.msel.size) return toast('삭제할 경기를 체크하세요');
+  const ms = S.matches.filter(m => S.msel.has(m.id));
+  if (!confirm(`경기 ${ms.length}개를 삭제할까요?\n골·출전 명단·감독 피드백과 연결된 경기 일정도 함께 지워지고 되돌릴 수 없습니다.`)) return;
+  const ev = ms.filter(m => m.event_id).map(m => m.event_id), mo = ms.filter(m => !m.event_id).map(m => m.id);
+  if (ev.length) await q(sb.from('events').delete().in('id', ev));
+  if (mo.length) await q(sb.from('matches').delete().in('id', mo));
+  S.mSel = false; S.msel = new Set(); toast('삭제했습니다'); await refresh(); renderTab();
 }
 async function deleteMatch(id) {
   const m = S.matches.find(x => x.id === id); if (!m) return;
@@ -747,7 +783,7 @@ function renderAdmin(main) {
   const subs = [['members', '회원'], ['voice', `소리함${S.newVoice ? ' ' + S.newVoice : ''}`], ['fines', '벌금'], ['rest', '휴식'], ['guests', '게스트']];
   if (isAdmin()) subs.push(['dues', '회비'], ['ledger', '입출금'], ['paste', '알림입력'], ['settings', '설정']);
   if (!subs.some(s => s[0] === S.adminSub)) S.adminSub = 'members';
-  main.innerHTML = `<div class="seg">${subs.map(([k, l]) => `<button class="${S.adminSub === k ? 'on' : ''}" onclick="S.adminSub='${k}';renderTab()">${l}</button>`).join('')}</div><div id="sub" style="margin-top:12px"></div>`;
+  main.innerHTML = `<div class="seg wrap">${subs.map(([k, l]) => `<button class="${S.adminSub === k ? 'on' : ''}" onclick="S.adminSub='${k}';renderTab()">${l}</button>`).join('')}</div><div id="sub" style="margin-top:12px"></div>`;
   const el = document.getElementById('sub');
   ({ members: adminMembers, voice: adminVoice, fines: adminFines, rest: adminRest, guests: adminGuests, dues: adminDues, ledger: adminLedger, paste: adminPaste, settings: adminSettings })[S.adminSub](el);
 }
@@ -775,9 +811,9 @@ function memberModal(id) {
     <label class="f">입단일</label><input class="i" type="date" id="mj" value="${m.joined_on || ''}">
     <button class="btn primary full" style="margin-top:14px" onclick="saveMember('${id}')">기본 정보 저장</button>
     ${adm ? `
-      <label class="f" style="margin-top:18px">권한 (운영진 지정 · 관리자 위임)</label>
-      <div class="row"><select class="i" id="mr"><option value="member">일반 회원</option><option value="staff">운영진 (일정·출석·경기·게스트·휴식 관리)</option><option value="admin">관리자 (전체 + 회비·권한)</option></select><button class="btn" onclick="saveRole('${id}')">변경</button></div>
-      <label class="f">고정 회비 (비우면 자동: 골레이로·운영진 2만원, 그 외 참여 횟수별)</label><div class="row"><input class="i" id="mfx" type="number" placeholder="자동${fixedOf({ ...m, fee_fixed: null }) != null ? ' (2만원 고정)' : ' (횟수별)'}" value="${m.fee_fixed ?? ''}"><button class="btn" onclick="saveFixed('${id}')">변경</button></div>
+      <label class="f" style="margin-top:18px">권한 (운영진 지정 · 관리자 위임)<br><span class="small">운영진: 일정·출석·경기·게스트·휴식 관리 / 관리자: 전체 + 회비·권한</span></label>
+      <div class="row"><select class="i" id="mr"><option value="member">일반 회원</option><option value="staff">운영진</option><option value="admin">관리자</option></select><button class="btn" onclick="saveRole('${id}')">변경</button></div>
+      <label class="f">고정 회비 (비우면 자동: 골레이로·운영진 2만원 / 0 = 면제)</label><div class="row"><input class="i" id="mfx" type="number" placeholder="자동${fixedOf({ ...m, fee_fixed: null }) != null ? ' (2만원 고정)' : ' (횟수별)'}" value="${m.fee_fixed ?? ''}"><button class="btn" onclick="saveFixed('${id}')">변경</button></div>
       <label class="f">적립금(선납) 직접 수정</label><div class="row"><input class="i" id="mc" type="number" value="${m.credit || 0}"><button class="btn" onclick="saveCredit('${id}')">변경</button></div>
       <label class="f">비밀번호 초기화</label><div class="row"><input class="i" id="mpw" placeholder="새 비밀번호 6자 이상"><button class="btn" onclick="resetPw('${id}')">변경</button></div>
       ${self ? '' : `<div class="row" style="margin-top:18px">${m.active ? `<button class="btn danger" style="flex:1" onclick="withdraw('${id}',false)">탈퇴 처리 (기록 유지)</button>` : `<button class="btn" style="flex:1" onclick="withdraw('${id}',true)">복귀 처리</button>`}<button class="btn danger" onclick="hardDelete('${id}')">계정 완전 삭제</button></div>`}` : ''}
