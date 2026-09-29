@@ -153,7 +153,7 @@ input.i,select.i{min-height:44px}
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -284,6 +284,7 @@ async function start() {
     }
     S.me = me;
     await refresh();
+    try { await checkMyReplies(); } catch (e) {}
     if (['staff','admin'].includes(me.role)) { const { count } = await sb.from('suggestions').select('id', { count: 'exact', head: true }).eq('status', 'new'); S.newVoice = count || 0; }
     renderShell();
     subscribe();
@@ -455,18 +456,49 @@ function renderHome(main) {
       <div class="row between" style="margin-top:8px"><span class="small">${S.me.joined_on ? esc(joinedText(S.me)) : '<span class="muted">입단일 미입력</span>'}</span><button class="btn sm" onclick="joinModal()">${S.me.joined_on ? '입단일 수정' : '입단일 입력'}</button></div></div>
     <h2>팀 전적</h2>
     <div class="card row between"><div class="big">${r.n}전 ${r.w}승 ${r.d}무 ${r.l}패</div><div class="muted">득 ${r.gf} · 실 ${r.ga}</div></div>
-    <div class="card row between" style="margin-top:18px" onclick="suggestModal()"><div><b>🤫 익명 소리함</b><div class="muted small">운영진에게 하고 싶은 말. 누가 보냈는지 아무도 모릅니다</div></div><span class="muted">›</span></div>`;
+    <div class="card" style="margin-top:18px"><div class="row between" onclick="suggestModal()"><div><b>🤫 익명 소리함</b><div class="muted small">운영진에게 하고 싶은 말. 누가 보냈는지 아무도 모릅니다</div></div><span class="muted">›</span></div>
+      ${myTokens().length ? `<button class="btn sm full" style="margin-top:10px" onclick="myVoiceModal()">내 의견·답변 보기${S.voiceNew ? ` <span class="tag unknown">새 답변 ${S.voiceNew}</span>` : ''}</button>` : ''}</div>`;
 }
+const myTokens = () => { try { return JSON.parse(localStorage.getItem('fc_voice_tokens') || '[]'); } catch (e) { return []; } };
+const saveTokens = t => { try { localStorage.setItem('fc_voice_tokens', JSON.stringify([...new Set(t)])); } catch (e) {} };
+const seenReplies = () => { try { return JSON.parse(localStorage.getItem('fc_voice_seen') || '[]'); } catch (e) { return []; } };
+function newToken() { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const r = crypto.getRandomValues(new Uint8Array(12)); const c = [...r].map(x => A[x % A.length]).join(''); return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8, 12)}`; }
+async function checkMyReplies() {
+  const t = myTokens(); if (!t.length) { S.voiceNew = 0; return []; }
+  const { data } = await sb.rpc('get_my_suggestions', { p_tokens: t }); const rows = data || [];
+  const seen = seenReplies(); S.voiceNew = rows.filter(r => r.reply && !seen.includes(r.id)).length; return rows;
+}
+async function myVoiceModal() {
+  const rows = await checkMyReplies();
+  try { localStorage.setItem('fc_voice_seen', JSON.stringify(rows.filter(r => r.reply).map(r => r.id))); } catch (e) {}
+  S.voiceNew = 0;
+  openModal(`<h3>내 의견·답변</h3><p class="muted small">이 폰에 저장된 확인 코드로 불러온 내용입니다. 다른 사람은 볼 수 없어요.</p>
+    ${rows.length ? rows.map(r => `<div class="card"><div class="row between"><span class="muted small">${r.created_on}</span><span class="tag ${r.reply ? 'dues' : 'scheduled'}">${r.reply ? '답변 완료' : '답변 대기'}</span></div>
+      <div style="white-space:pre-wrap;margin-top:6px">${esc(r.body)}</div>
+      ${r.reply ? `<div class="fb" style="margin-top:8px"><b>운영진 답변</b><br>${esc(r.reply)}</div>` : ''}
+      <div class="muted small" style="margin-top:6px">코드 ${esc(r.code)}</div></div>`).join('') : '<div class="card empty">불러올 의견이 없습니다</div>'}
+    <label class="f">다른 폰에서 보낸 의견 확인 (코드 입력)</label><div class="row"><input class="i" id="vtok" placeholder="예: ABCD-EFGH-JKLM" autocapitalize="characters"><button class="btn" onclick="addToken()">추가</button></div>
+    <button class="btn full" style="margin-top:12px" onclick="closeModal();renderTab()">닫기</button>`);
+}
+function addToken() { const v = val('vtok').trim().toUpperCase(); if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(v)) return toast('코드 형식: XXXX-XXXX-XXXX'); saveTokens([...myTokens(), v]); myVoiceModal(); }
 function suggestModal() {
   openModal(`<h3>🤫 익명 소리함</h3>
-    <p class="muted small">운영진만 읽을 수 있습니다. 보낸 사람 이름·아이디는 저장되지 않아서 관리자·운영진도 누가 썼는지 알 수 없어요. 보낸 날짜만 남습니다.<br>보낸 뒤에는 본인도 다시 볼 수 없으니, 필요하면 따로 복사해 두세요.</p>
+    <p class="muted small">운영진만 읽을 수 있습니다. 보낸 사람 이름·아이디는 저장되지 않아서 관리자·운영진도 누가 썼는지 알 수 없어요. 보낸 날짜만 남습니다.<br>'답변 받기'를 체크하지 않으면 보낸 뒤 본인도 다시 볼 수 없어요.</p>
     <textarea class="i" id="sgb" style="min-height:220px" placeholder="건의, 불편한 점, 칭찬, 무엇이든 괜찮아요"></textarea>
+    <label class="chk" style="border:0"><input type="checkbox" id="sgr"><span>답변 받기 <span class="muted small">(확인 코드가 이 폰에 저장되고, 답변은 나만 볼 수 있어요. 여전히 익명입니다)</span></span></label>
     <p class="muted small">본인을 알 수 있는 내용(이름, 특정 상황)을 쓰면 짐작될 수 있어요.</p>
     <div class="row" style="margin-top:10px"><button class="btn primary" style="flex:1" onclick="sendSuggest()">익명으로 보내기</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
 }
 async function sendSuggest() {
   const b = val('sgb'); if (!b.trim()) return toast('내용을 입력하세요');
-  await q(sb.rpc('submit_suggestion', { p_body: b })); closeModal(); toast('익명으로 전달했습니다. 고마워요!', 3500);
+  const want = document.getElementById('sgr').checked; const tok = want ? newToken() : null;
+  await q(sb.rpc('submit_suggestion', { p_body: b, p_token: tok }));
+  if (!want) { closeModal(); toast('익명으로 전달했습니다. 고마워요!', 3500); return; }
+  saveTokens([...myTokens(), tok]);
+  openModal(`<h3>익명으로 전달했어요 🙂</h3><p class="small">운영진이 답변하면 홈 화면 소리함의 <b>'내 의견·답변 보기'</b>에 표시됩니다.</p>
+    <div class="card" style="text-align:center"><div class="muted small">확인 코드</div><div class="big" style="letter-spacing:.08em">${tok}</div></div>
+    <p class="muted small">코드는 이 폰에 자동 저장됐어요. 폰을 바꾸거나 브라우저 기록을 지우면 이 코드가 있어야 답변을 볼 수 있으니, 필요하면 캡처해 두세요. 코드는 운영진도 알 수 없습니다.</p>
+    <div class="row"><button class="btn" style="flex:1" onclick="navigator.clipboard&&navigator.clipboard.writeText('${tok}').then(()=>toast('복사했습니다'))">코드 복사</button><button class="btn primary" style="flex:1" onclick="closeModal();renderTab()">확인</button></div>`);
 }
 function noticeCard() {
   const n = S.notices.filter(x => x.pinned).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
@@ -876,14 +908,22 @@ async function adminVoice(el) {
   const rows = await q(sb.from('suggestions').select('*').order('id', { ascending: false }).limit(200));
   S.voice = rows; S.newVoice = rows.filter(r => r.status === 'new').length;
   const ST = { new: ['unknown', '새 글'], read: ['staff', '확인'], done: ['dues', '처리 완료'] };
-  el.innerHTML = `<p class="muted small">보낸 사람 정보는 저장되지 않습니다. 운영진끼리도 누가 썼는지 추측하거나 공유하지 않도록 해주세요.</p>
-    ${rows.length ? rows.map(r => `<div class="card"><div class="row between"><span class="tag ${ST[r.status][0]}">${ST[r.status][1]}</span><span class="muted small">${r.created_on}</span></div>
+  el.innerHTML = `<p class="muted small">보낸 사람 정보는 저장되지 않습니다. '답변 원함' 글에 답변을 쓰면 보낸 사람만 볼 수 있어요. 운영진끼리도 누가 썼는지 추측하거나 공유하지 않도록 해주세요.</p>
+    ${rows.length ? rows.map(r => `<div class="card" ${r.want_reply && !r.reply ? 'style="border-color:var(--bib)"' : ''}><div class="row between"><span><span class="tag ${ST[r.status][0]}">${ST[r.status][1]}</span>${r.want_reply ? ` <span class="tag ${r.reply ? 'dues' : 'admin'}">${r.reply ? '답변 완료' : '답변 원함'}</span>` : ''}</span><span class="muted small">${r.created_on}</span></div>
       <div style="white-space:pre-wrap;margin-top:8px;line-height:1.6">${esc(r.body)}</div>
+      ${r.reply ? `<div class="fb" style="margin-top:8px;background:#e8f5ee;border-color:#bfe3cf"><b>보낸 답변</b> <span class="muted small">${fmtD(r.replied_at)}</span><br>${esc(r.reply)}</div>` : ''}
       ${r.staff_memo ? `<div class="fb" style="margin-top:8px">운영진 메모: ${esc(r.staff_memo)}</div>` : ''}
-      <div class="row" style="margin-top:10px;flex-wrap:wrap">${r.status !== 'read' ? `<button class="btn sm" onclick="voiceSet(${r.id},{status:'read'})">확인</button>` : ''}${r.status !== 'done' ? `<button class="btn sm" onclick="voiceSet(${r.id},{status:'done'})">처리 완료</button>` : ''}<button class="btn sm" onclick="voiceMemo(${r.id})">메모</button>${isAdmin() ? `<button class="btn sm danger" onclick="voiceDel(${r.id})">삭제</button>` : ''}</div></div>`).join('') : `<div class="card empty">아직 들어온 의견이 없습니다</div>`}`;
+      <div class="row" style="margin-top:10px;flex-wrap:wrap">${r.status !== 'read' ? `<button class="btn sm" onclick="voiceSet(${r.id},{status:'read'})">확인</button>` : ''}${r.status !== 'done' ? `<button class="btn sm" onclick="voiceSet(${r.id},{status:'done'})">처리 완료</button>` : ''}${r.want_reply ? `<button class="btn sm primary" onclick="voiceReply(${r.id})">${r.reply ? '답변 수정' : '답변 쓰기'}</button>` : ''}<button class="btn sm" onclick="voiceMemo(${r.id})">메모</button>${isAdmin() ? `<button class="btn sm danger" onclick="voiceDel(${r.id})">삭제</button>` : ''}</div></div>`).join('') : `<div class="card empty">아직 들어온 의견이 없습니다</div>`}`;
   document.querySelectorAll('.seg button').forEach(b => { if (b.textContent.startsWith('소리함')) b.textContent = '소리함' + (S.newVoice ? ' ' + S.newVoice : ''); });
 }
 async function voiceSet(id, patch) { await q(sb.from('suggestions').update(patch).eq('id', id)); renderTab(); }
+function voiceReply(id) {
+  const r = S.voice.find(x => x.id === id);
+  openModal(`<h3>답변 쓰기</h3><div class="card small" style="white-space:pre-wrap;max-height:30vh;overflow:auto">${esc(r.body)}</div><p class="muted small">보낸 사람만 볼 수 있습니다. 누가 답변했는지는 표시되지 않고 '운영진 답변'으로 보입니다.</p>
+    <textarea class="i" id="vr" style="min-height:160px">${esc(r.reply || '')}</textarea>
+    <div class="row" style="margin-top:10px"><button class="btn primary" style="flex:1" onclick="saveVoiceReply(${id})">답변 보내기</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+async function saveVoiceReply(id) { const t = val('vr').trim(); if (!t) return toast('답변을 입력하세요'); await q(sb.from('suggestions').update({ reply: t, replied_at: new Date().toISOString(), status: 'done' }).eq('id', id)); closeModal(); toast('답변을 보냈습니다'); renderTab(); }
 function voiceMemo(id) {
   const r = S.voice.find(x => x.id === id);
   openModal(`<h3>운영진 메모</h3><p class="muted small">처리 내용 등을 운영진끼리 공유하는 메모입니다.</p><textarea class="i" id="vm">${esc(r.staff_memo || '')}</textarea>
