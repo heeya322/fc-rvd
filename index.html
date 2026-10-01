@@ -153,7 +153,7 @@ input.i,select.i{min-height:44px}
 <script>
 // ===== 설정: Supabase > Project Settings > API Keys 에서 복사해 넣기 =====
 const SUPABASE_URL = 'https://vnhinhjshlwyhopwxwxo.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_ntpzlv0gGwCZjxTY7JJ0NA_6P1BCDuQ';
+const SUPABASE_KEY = '여기에-anon-또는-publishable-키';
 const ID_DOMAIN = 'fc-hoejeonmun.com';   // 아이디 로그인용 내부 주소(메일 발송 없음)
 // =======================================================================
 
@@ -371,7 +371,7 @@ function eventCard(e) {
   const ef = S.fines.filter(f => f.event_id === e.id);
   const att = S.att.filter(a => a.event_id === e.id);
   const gs = S.guests.filter(g => g.event_id === e.id);
-  const pending = actives().length - yes.length - no.length - may.length;
+  const pending = actives().filter(m => !m.is_roster).length - yes.length - no.length - may.length;
   const mt = e.kind === 'match' ? S.matches.find(m => m.event_id === e.id) : null;
   const attLabel = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '출전·응원' : '참여';
   const head = past && att.length ? att.length : yes.length;
@@ -853,18 +853,45 @@ async function adminMembers(el) {
   const pend = S.members.filter(m => !m.approved && m.active);
   const act = S.members.filter(m => m.approved && m.active);
   const out = S.members.filter(m => m.approved && !m.active);
-  const row = m => `<div class="item" onclick="memberModal('${m.id}')"><div class="grow"><b>${esc(m.name)}</b> ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}<div class="muted small">${POS[m.position]} · 아이디 ${esc(m.login_id)}${m.joined_on ? ' · ' + esc(joinedText(m)) : ' · 입단일 미입력'}${m.bank_name && m.bank_name !== m.name ? ' · 입금자명 ' + esc(m.bank_name) : ''}${m.credit ? ' · 적립 ' + won(m.credit) : ''}${fixedOf(m) != null && m.position !== 'coach' ? ' · 고정 ' + won(fixedOf(m)) : ''}</div></div></div>`;
-  el.innerHTML = `${pend.length ? `<h2>가입 승인 대기</h2><div class="card list">${pend.map(m => `<div class="item"><div class="grow"><b>${esc(m.name)}</b><div class="muted small">아이디 ${esc(m.login_id)}${m.joined_on ? ' · 입단 ' + m.joined_on : ''}</div></div><button class="btn sm primary" onclick="approve('${m.id}',true)">승인</button><button class="btn sm danger" onclick="approve('${m.id}',false)">거절</button></div>`).join('')}</div>` : ''}
+  const row = m => `<div class="item" onclick="memberModal('${m.id}')"><div class="grow"><b>${esc(m.name)}</b> ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}${m.is_roster ? ' <span class="tag scheduled">명단(미가입)</span>' : ''}<div class="muted small">${POS[m.position]}${m.is_roster ? '' : ' · 아이디 ' + esc(m.login_id)}${m.joined_on ? ' · ' + esc(joinedText(m)) : ' · 입단일 미입력'}${m.bank_name && m.bank_name !== m.name ? ' · 입금자명 ' + esc(m.bank_name) : ''}${m.credit ? ' · 적립 ' + won(m.credit) : ''}${fixedOf(m) != null && m.position !== 'coach' ? ' · 고정 ' + won(fixedOf(m)) : ''}</div></div></div>`;
+  el.innerHTML = `${pend.length ? `<h2>가입 승인 대기</h2><div class="card list">${pend.map(m => `<div class="item"><div class="grow"><b>${esc(m.name)}</b><div class="muted small">아이디 ${esc(m.login_id)}${m.joined_on ? ' · 입단 ' + m.joined_on : ''}</div></div><button class="btn sm primary" onclick="approveAsk('${m.id}')">승인</button><button class="btn sm danger" onclick="approve('${m.id}',false)">거절</button></div>`).join('')}</div>` : ''}
+    <div class="row" style="margin-top:14px"><button class="btn" style="flex:1" onclick="rosterModal()">+ 명단 회원 추가 (가입 안 한 사람)</button></div>
     <h2>활동 회원 ${act.length}명</h2>
     <input class="i" placeholder="이름·초성 검색" oninput="document.querySelectorAll('#mlist .item').forEach(x=>x.style.display=hit(x.querySelector('b').textContent,this.value)?'':'none')">
     <div class="card list" id="mlist" style="margin-top:8px">${act.map(row).join('')}</div>
     ${out.length ? `<h2>탈퇴 회원 ${out.length}명</h2><div class="card list">${out.map(row).join('')}</div>` : ''}
     <p class="muted small">운영진 지정·관리자 위임은 회원을 눌러 '권한'에서 바꿉니다(관리자만 가능).</p>`;
 }
+function approveAsk(id) {
+  const rs = S.members.filter(m => m.is_roster && m.approved);
+  if (!rs.length) return approve(id, true);
+  const m = S.members.find(x => x.id === id);
+  pickMember(`${m.name}님 승인 — 기존 명단과 연결할까요?`, rs.map(r => ({ ...r, sub: '명단 회원' })), [['__new', '연결 없이 새 회원으로 승인']], async v => {
+    if (v === '__new') return approve(id, true);
+    if (!confirm(`명단 회원 '${nameOf(v)}'의 출석·회비·벌금 기록을 ${m.name}님 계정으로 합치고 승인할까요?`)) return;
+    await q(sb.rpc('admin_merge_member', { p_roster: v, p_member: id })); toast('연결하고 승인했습니다'); await refresh(); renderTab();
+  });
+}
+function rosterModal() {
+  openModal(`<h3>명단 회원 추가</h3><p class="muted small">아직 앱에 가입 안 한 회원을 명단에만 올립니다. 출석 체크·회비 청구·경기 기록에 바로 쓸 수 있고, 나중에 본인이 가입하면 승인할 때 '기존 명단과 연결'로 기록을 합치면 됩니다. (명단 회원은 투표를 못 하니 투표 벌금은 제외)</p>
+    <label class="f">이름 (입금자명과 같게)</label><input class="i" id="rn">
+    <label class="f">포지션</label><select class="i" id="rp"><option value="field">필드</option><option value="goleiro">골레이로</option><option value="coach">감독</option></select>
+    <label class="f">입단일 (선택)</label><input class="i" type="date" id="rj">
+    <div class="row" style="margin-top:14px"><button class="btn primary" style="flex:1" onclick="saveRoster()">추가</button><button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+async function saveRoster() { const n = val('rn').trim(); if (!n) return toast('이름을 입력하세요'); await q(sb.rpc('admin_add_roster', { p_name: n, p_position: val('rp'), p_joined: val('rj') || null })); closeModal(); toast(`${n}님을 명단에 추가했습니다`); await refresh(); renderTab(); }
+function mergeAsk(rid) {
+  const list = S.members.filter(m => !m.is_roster && m.approved);
+  pickMember(`'${nameOf(rid)}' 명단 기록을 합칠 가입 계정`, list, [], async v => {
+    if (!confirm(`'${nameOf(rid)}' 명단 기록을 ${nameOf(v)}님 계정으로 합칠까요? 명단 회원은 사라집니다.`)) return;
+    await q(sb.rpc('admin_merge_member', { p_roster: rid, p_member: v })); toast('합쳤습니다'); await refresh(); renderTab();
+  });
+}
 async function approve(id, ok) { await q(sb.rpc('staff_approve', { p_member: id, p_ok: ok })); toast(ok ? '승인했습니다' : '거절했습니다'); renderTab(); }
 function memberModal(id) {
   const m = S.members.find(x => x.id === id); const adm = isAdmin(); const self = id === S.me.id;
-  openModal(`<h3>${esc(m.name)} ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}</h3><div class="muted small">아이디 ${esc(m.login_id)}${m.active ? '' : ' · 탈퇴'}</div>
+  openModal(`<h3>${esc(m.name)} ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}</h3><div class="muted small">${m.is_roster ? '명단 회원 (앱 미가입)' : '아이디 ' + esc(m.login_id)}${m.active ? '' : ' · 탈퇴'}</div>
+    ${m.is_roster ? `<button class="btn sm" style="margin-top:8px" onclick="mergeAsk('${id}')">가입한 계정과 연결(기록 합치기)</button>` : ''}
     <label class="f">이름</label><input class="i" id="mn" value="${esc(m.name)}">
     <label class="f">입금자명 (통장에 찍히는 이름이 다르면)</label><input class="i" id="mb" value="${esc(m.bank_name || '')}">
     <label class="f">포지션</label><select class="i" id="mp"><option value="field">필드</option><option value="goleiro">골레이로 (회비 2만)</option><option value="coach">감독 (회비 없음)</option></select>
@@ -986,7 +1013,8 @@ async function adminDues(el) {
   S.adminMonth = S.adminMonth || ym(); const m = S.adminMonth;
   el.innerHTML = `<div class="empty">불러오는 중…</div>`;
   const [rows, st] = await Promise.all([q(sb.from('dues').select('*').eq('month', m)), q(sb.from('monthly_status').select('*').eq('month', m))]);
-  const ps = players(); const paid = rows.filter(r => r.paid_amount >= r.amount_due).length;
+  const ps = [...players(), ...S.members.filter(x => !players().includes(x) && rows.some(r => r.member_id === x.id))];
+  S._duesRows = rows; const paid = rows.filter(r => r.paid_amount >= r.amount_due).length;
   const total = rows.reduce((a, r) => a + r.amount_due, 0), got = rows.reduce((a, r) => a + Math.min(r.paid_amount, r.amount_due), 0);
   el.innerHTML = `<div class="row between"><button class="btn sm" onclick="S.adminMonth=addMonth('${m}',-1);renderTab()">◀</button><b style="font-size:17px">${m.slice(0, 4)}년 ${monthLabel(m)}</b><button class="btn sm" onclick="S.adminMonth=addMonth('${m}',1);renderTab()">▶</button></div>
     <div class="card" style="margin-top:10px"><div class="row between"><div><div class="muted small">납부</div><div class="big">${paid}/${rows.length}명</div></div><div style="text-align:right"><div class="muted small">입금 / 청구</div><div class="big">${won(got)}</div><div class="muted small">/ ${won(total)}</div></div></div>
@@ -994,9 +1022,26 @@ async function adminDues(el) {
       <button class="btn sm full" style="margin-top:8px" onclick="shareDuesNotice('${m}')">단톡방 회비 공지 공유</button>
       <div class="muted small" style="margin-top:8px">매월 말일쯤 다음 달 청구를 생성하세요. 회원 선택 상태(휴식 포함), 지난달 정기모임 출석, 감면율, 적립금을 반영합니다. 납부 기록은 유지됩니다. 회원별 '안내'를 누르면 개별 입금 안내 문구가 만들어집니다.</div></div>
     <div class="card list">${ps.map(p => { const d = rows.find(r => r.member_id === p.id); const s = st.find(x => x.member_id === p.id)?.status;
-      return `<div class="item"><div class="grow"><b>${esc(p.name)}</b><div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') : (fixedOf(p) != null ? `고정 ${won(fixedOf(p))} (${fixedWhy(p)})` : `선택: ${s ? STATUS[s] : '미선택(정규)'}`)}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
-      ${d ? `<b>${won(d.amount_due)}</b><button class="btn sm ${d.paid_amount >= d.amount_due ? '' : 'danger'}" onclick="togglePaid('${p.id}','${m}',${d.paid_amount >= d.amount_due})">${d.paid_amount >= d.amount_due ? '납부' : '미납'}</button><button class="btn sm" onclick="shareOne('${p.id}','${m}')">안내</button>` : ''}</div>`; }).join('')}</div>`;
-  S._duesRows = rows;
+      return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.name)}</b>${!p.active ? ' <span class="tag">탈퇴</span>' : ''}${p.is_roster ? ' <span class="tag scheduled">명단</span>' : ''}<div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') : (fixedOf(p) != null ? `고정 ${won(fixedOf(p))} (${fixedWhy(p)})` : `선택: ${s ? STATUS[s] : '미선택(정규)'}`)}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
+      ${d ? `<b onclick="duesEdit('${p.id}','${m}')" style="text-decoration:underline dotted">${won(d.amount_due)}</b><button class="btn sm ${d.paid_amount >= d.amount_due ? '' : 'danger'}" onclick="togglePaid('${p.id}','${m}',${d.paid_amount >= d.amount_due})">${d.paid_amount >= d.amount_due ? '납부' : '미납'}</button><button class="btn sm" onclick="shareOne('${p.id}','${m}')">안내</button>` : `<button class="btn sm" onclick="duesEdit('${p.id}','${m}')">금액 입력</button>`}</div>`; }).join('')}</div>
+    <button class="btn full" onclick="duesAddOther('${m}')">+ 탈퇴·명단 회원 회비 추가</button>
+    <p class="muted small">금액을 누르면 직접 수정·삭제할 수 있습니다. 지난달 기록을 채울 때나 탈퇴한 회원 회비를 남길 때 쓰세요.</p>`;
+}
+function duesEdit(id, m) {
+  const d = (S._duesRows || []).find(r => r.member_id === id); const p = S.members.find(x => x.id === id);
+  const def = d ? d.amount_due : (fixedOf(p) ?? 40000);
+  openModal(`<h3>${esc(p.name)} · ${m.slice(0, 4)}년 ${monthLabel(m)} 회비</h3>
+    <label class="f">구분</label><select class="i" id="dst">${['normal', 'once', 'rest', 'fixed'].map(k => `<option value="${k}" ${(d?.status_used || (fixedOf(p) != null ? 'fixed' : 'normal')) === k ? 'selected' : ''}>${STATUS[k]}</option>`).join('')}</select>
+    <label class="f">청구 금액</label><input class="i" id="dam" type="number" value="${def}">
+    <label class="chk" style="border:0"><input type="checkbox" id="dpd" ${d && d.paid_amount >= d.amount_due ? 'checked' : ''}><span>납부 완료로 표시</span></label>
+    <div class="row" style="margin-top:10px"><button class="btn primary" style="flex:1" onclick="duesSave('${id}','${m}')">저장</button>${d ? `<button class="btn danger" onclick="duesDel('${id}','${m}')">삭제</button>` : ''}<button class="btn" onclick="closeModal()">닫기</button></div>`);
+}
+async function duesSave(id, m) { await q(sb.rpc('admin_set_dues', { p_member: id, p_month: m, p_amount: parseInt(val('dam') || '0', 10), p_status: val('dst'), p_paid: document.getElementById('dpd').checked })); closeModal(); toast('저장했습니다'); renderTab(); }
+async function duesDel(id, m) { if (!confirm('이 달 회비 기록을 삭제할까요?')) return; await q(sb.rpc('admin_delete_dues', { p_member: id, p_month: m })); closeModal(); renderTab(); }
+function duesAddOther(m) {
+  const list = S.members.filter(x => x.approved && x.position !== 'coach' && (!x.active || x.is_roster) && !(S._duesRows || []).some(r => r.member_id === x.id));
+  if (!list.length) return toast('추가할 탈퇴·명단 회원이 없습니다. 가입 안 한 사람은 관리 → 회원에서 명단 회원으로 먼저 추가하세요', 5000);
+  pickMember(`${monthLabel(m)} 회비를 추가할 회원`, list.map(x => ({ ...x, sub: !x.active ? '탈퇴' : '명단' })), [], id => duesEdit(id, m));
 }
 function shareOne(id, m) {
   const d = (S._duesRows || []).find(r => r.member_id === id); const p = S.members.find(x => x.id === id); if (!d) return;
@@ -1090,9 +1135,14 @@ async function adminSettings(el) {
   el.innerHTML = `<div class="card" ${old ? 'style="border-color:var(--loss)"' : ''}><b>데이터 백업</b><p class="muted small">회원·일정·출석·회비·입출금·벌금·경기 기록 등 모든 데이터를 엑셀 파일 하나로 내려받습니다(표마다 시트 1개). 분기에 한 번 정도 받아서 구글 드라이브 등에 보관하세요.</p>
     <div class="small" style="margin-bottom:8px">${lb ? `마지막 백업: ${lb}` : '이 폰에서 백업한 기록 없음'}${old ? ' · <b style="color:var(--loss)">백업할 때가 됐어요</b>' : ''}</div>
     <button class="btn primary full" id="bkbtn" onclick="doBackup()">전체 데이터 백업 (엑셀)</button></div>
-    <div class="card"><b>MacroDroid 자동 전송 정보</b><p class="muted small">MacroDroid의 HTTP 요청 설정에 사용합니다. 비밀키는 다른 사람에게 보이지 않게 하세요.</p>
-    <label class="f">요청 주소</label><input class="i" readonly value="${esc(SUPABASE_URL)}/rest/v1/rpc/ingest_notification" onclick="this.select()">
-    <label class="f">비밀키 (p_secret)</label><input class="i" readonly value="${esc(secret)}" onclick="this.select()"></div>
+    <div class="card"><b>MacroDroid 자동 전송 설정값</b><p class="muted small">MacroDroid 매크로에 'HTTP 요청' 동작을 추가하고 아래 값을 그대로 넣으세요. 칸을 누르면 전체 선택되니 길게 눌러 복사하면 됩니다. 비밀키는 다른 사람에게 보이지 않게 하세요.</p>
+    <label class="f">방식</label><input class="i" readonly value="POST">
+    <label class="f">URL</label><input class="i" readonly value="${esc(SUPABASE_URL)}/rest/v1/rpc/ingest_raw" onclick="this.select()">
+    <label class="f">헤더 1 · 이름: apikey / 값:</label><input class="i" readonly value="${esc(SUPABASE_KEY)}" onclick="this.select()">
+    <label class="f">헤더 2 · 이름: x-fc-secret / 값:</label><input class="i" readonly value="${esc(secret)}" onclick="this.select()">
+    <label class="f">본문 종류 (Content type)</label><input class="i" readonly value="text/plain">
+    <label class="f">본문 (매직 텍스트)</label><input class="i" readonly value="[not_title] [notification]" onclick="this.select()">
+    <p class="muted small">설정 후 관리 → 알림입력 → '최근 받은 알림'에 새 줄이 생기면 성공입니다.</p></div>
     <div class="card"><b>앱 주소</b><p class="muted small">회원들에게 공유하고, 폰 브라우저 메뉴에서 "홈 화면에 추가"를 누르게 하세요.</p><input class="i" readonly value="${esc(appUrl())}" onclick="this.select()"></div>`;
 }
 
