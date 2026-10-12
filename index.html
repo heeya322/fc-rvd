@@ -26,7 +26,7 @@ header h1 img{width:30px;height:30px;vertical-align:-8px;margin-right:8px;backgr
 header .who{font-size:13px;opacity:.85}
 header button{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:4px 10px;font-size:12px}
 main{max-width:640px;margin:0 auto;padding:14px 14px calc(env(safe-area-inset-bottom) + 90px)}
-nav{position:fixed;bottom:0;left:0;right:0;z-index:5;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:5;flex-shrink:0;background:#fff;border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;border:0;background:none;padding:10px 0 12px;font-size:12px;color:var(--sub);display:flex;flex-direction:column;align-items:center;gap:2px}
 nav button b{font-size:19px;line-height:1}
 nav button.on{color:var(--court);font-weight:700}
@@ -142,6 +142,14 @@ input.i,select.i{min-height:44px}
 .tag{white-space:nowrap}
 .item b{white-space:nowrap}
 .item .grow b{white-space:normal}
+
+/* 앱 셸: 화면 전체를 고정하고 가운데(main)만 스크롤 — iOS 홈화면 앱에서 하단 메뉴가 뜨는 현상 방지 */
+#app.shell{position:fixed;inset:0;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+#app.shell header{position:relative;flex-shrink:0}
+#app.shell main{flex:1 1 auto;width:100%;max-width:none;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:14px max(14px, calc((100% - 612px) / 2)) 24px}
+#app.shell nav{position:relative;bottom:auto}
+#app.shell .selbar{position:sticky;bottom:0;margin:0 -14px}
+html,body{overscroll-behavior:none}
 </style>
 </head>
 <body>
@@ -237,6 +245,7 @@ function idInputs() {
 }
 const loginId = () => { const y = val('lyy'), p = val('lph'); return /^\d{2}$/.test(y) && /^\d{4}$/.test(p) ? y + p : null; };
 function renderLogin(mode = 'login') {
+  app.classList.remove('shell');
   app.innerHTML = `<div class="login">
     <div class="logo"><img src="${LOGO}" alt="FC회전문 로고">FC회전문</div>
     <p class="muted">${mode === 'login' ? '로그인하세요.' : '가입 신청 후 운영진이 승인하면 사용할 수 있습니다.'}</p>
@@ -284,7 +293,7 @@ async function start() {
     for (let i = 0; i < 3 && !me; i++) { me = await q(sb.from('members').select('*').eq('id', user.id).maybeSingle()); if (!me) await new Promise(r => setTimeout(r, 700)); }
     if (!me || !me.approved || !me.active) {
       const msg = me && me.approved && !me.active ? '탈퇴 처리된 계정입니다. 문의는 운영진에게 해주세요.' : '운영진이 가입을 승인하면 사용할 수 있습니다. 승인 후 새로고침하세요.';
-      app.innerHTML = `<div class="login"><div class="logo"><img src="${LOGO}" alt="FC회전문 로고">FC회전문</div><div class="card" style="margin-top:20px"><b>${me && me.approved ? '이용 불가' : '승인 대기 중'}</b><p class="muted">${msg}</p><div class="row"><button class="btn" onclick="location.reload()">새로고침</button><button class="btn" onclick="logout()">로그아웃</button></div></div></div>`;
+      app.classList.remove("shell"); app.innerHTML = `<div class="login"><div class="logo"><img src="${LOGO}" alt="FC회전문 로고">FC회전문</div><div class="card" style="margin-top:20px"><b>${me && me.approved ? '이용 불가' : '승인 대기 중'}</b><p class="muted">${msg}</p><div class="row"><button class="btn" onclick="location.reload()">새로고침</button><button class="btn" onclick="logout()">로그아웃</button></div></div></div>`;
       return;
     }
     S.me = me;
@@ -317,6 +326,7 @@ function subscribe() {
 
 // ===== 화면 틀 =====
 function renderShell() {
+  app.classList.add('shell');
   const tabs = [['home','⌂','홈'],['events','◷','일정'],['matches','⚽','경기'],['dues','₩','회비']];
   if (isStaff()) tabs.push(['admin','⚙',`관리${S.newVoice ? ' •' : ''}`]);
   app.innerHTML = `<header><h1><img src="${LOGO}" alt="">FC회전문</h1><div class="who">${esc(S.me.name)}${S.me.role !== 'member' ? ' · ' + ROLE[S.me.role] : ''}</div><button onclick="logout()">로그아웃</button></header>
@@ -324,7 +334,7 @@ function renderShell() {
     <nav>${tabs.map(([k, i, l]) => `<button data-tab="${k}" onclick="go('${k}')"><b>${i}</b>${l}</button>`).join('')}</nav>`;
   renderTab();
 }
-function go(tab) { S.tab = tab; S.selMode = false; S.sel.clear(); S.mSel = false; if (tab !== 'matches') S.openMatch = null; renderTab(); window.scrollTo(0, 0); }
+function go(tab) { S.tab = tab; S.selMode = false; S.sel.clear(); S.mSel = false; if (tab !== 'matches') S.openMatch = null; renderTab(); (document.getElementById('main') || window).scrollTo(0, 0); }
 function renderTab() {
   const main = document.getElementById('main'); if (!main) return;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
@@ -415,7 +425,7 @@ function shareEvent(id) {
   const e = evById(id); const yes = S.rsvps.filter(r => r.event_id === id && r.status === 'attend').length; const g = S.guests.filter(x => x.event_id === id).length;
   share(`[FC회전문] ${e.title}${e.opponent ? ' vs ' + e.opponent : ''}\n📅 ${fmt(e.starts_at)}${e.place ? `\n📍 ${e.place}` : ''}${e.memo ? `\n${e.memo}` : ''}\n현재 참석 ${yes}명${g ? ` + 게스트 ${g}명` : ''}${e.kind === 'regular' ? '\n⏰ 당일 오후 6:30 투표 마감 (참석/미정/불참 필수)' : ''}\n투표 👉 ${appUrl()}`);
 }
-function openMatchView(id) { S.tab = 'matches'; S.openMatch = id; S.quarter = 1; S.extraQ = 0; renderTab(); window.scrollTo(0, 0); }
+function openMatchView(id) { S.tab = 'matches'; S.openMatch = id; S.quarter = 1; S.extraQ = 0; renderTab(); (document.getElementById('main') || window).scrollTo(0, 0); }
 
 // ===== 홈: 달력 =====
 function calendarHtml() {
