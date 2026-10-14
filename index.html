@@ -386,7 +386,9 @@ function eventCard(e) {
   const ef = S.fines.filter(f => f.event_id === e.id);
   const att = S.att.filter(a => a.event_id === e.id);
   const gs = S.guests.filter(g => g.event_id === e.id);
-  const pending = actives().filter(m => !m.is_roster).length - yes.length - no.length - may.length;
+  const voted = new Set(rs.map(r => r.member_id));
+  const pendList = actives().filter(m => !m.is_roster && !voted.has(m.id));
+  const pending = pendList.length;
   const mt = e.kind === 'match' ? S.matches.find(m => m.event_id === e.id) : null;
   const attLabel = e.kind === 'regular' ? '출석' : e.kind === 'match' ? '출전·응원' : '참여';
   const head = past && att.length ? att.length : yes.length;
@@ -404,7 +406,7 @@ function eventCard(e) {
       ${no.length && !past ? `<br>불참(${no.length}): ${no.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
       ${may.length && !past ? `<br>미정(${may.length}): ${may.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
       ${ef.length ? `<br><span style="color:var(--loss)">벌금 ${ef.filter(f => !f.waived).length}건</span>` : ''}
-      ${!past && pending > 0 ? `<br>미응답 ${pending}명` : ''}
+      ${!past && pending > 0 ? `<br><span style="color:var(--loss)">미응답(${pending}): ${pendList.map(m => esc(m.name)).join(', ')}</span>` : ''}
       ${gs.length ? `<div class="chipline">${gs.map(g => `<span class="chip g">게스트 ${esc(g.name)}${g.member_id ? ' → 가입' : ''}</span>`).join('')}</div>` : ''}
     </div>
     <div class="row" style="margin-top:10px;flex-wrap:wrap">
@@ -423,7 +425,9 @@ async function makeFines(eid) {
 }
 function shareEvent(id) {
   const e = evById(id); const yes = S.rsvps.filter(r => r.event_id === id && r.status === 'attend').length; const g = S.guests.filter(x => x.event_id === id).length;
-  share(`[FC회전문] ${e.title}${e.opponent ? ' vs ' + e.opponent : ''}\n📅 ${fmt(e.starts_at)}${e.place ? `\n📍 ${e.place}` : ''}${e.memo ? `\n${e.memo}` : ''}\n현재 참석 ${yes}명${g ? ` + 게스트 ${g}명` : ''}${e.kind === 'regular' ? '\n⏰ 당일 오후 6:30 투표 마감 (참석/미정/불참 필수)' : ''}\n투표 👉 ${appUrl()}`);
+  const voted = new Set(S.rsvps.filter(r => r.event_id === id).map(r => r.member_id));
+  const pend = actives().filter(m => !m.is_roster && !voted.has(m.id)).map(m => m.name);
+  share(`[FC회전문] ${e.title}${e.opponent ? ' vs ' + e.opponent : ''}\n📅 ${fmt(e.starts_at)}${e.place ? `\n📍 ${e.place}` : ''}${e.memo ? `\n${e.memo}` : ''}\n현재 참석 ${yes}명${g ? ` + 게스트 ${g}명` : ''}${e.kind === 'regular' ? '\n⏰ 당일 오후 6:30 투표 마감 (참석/미정/불참 필수)' : ''}${pend.length ? `\n🙋 아직 투표 안 한 분(${pend.length}): ${pend.join(', ')}` : ''}\n투표 👉 ${appUrl()}`);
 }
 function openMatchView(id) { S.tab = 'matches'; S.openMatch = id; S.quarter = 1; S.extraQ = 0; renderTab(); (document.getElementById('main') || window).scrollTo(0, 0); }
 
