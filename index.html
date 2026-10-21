@@ -200,7 +200,9 @@ const fixedWhy = m => m?.fee_fixed != null ? '개별 지정' : m?.position === '
 const feeOf = (m, st) => Math.round(RAW[st] * rateOf(m));
 const man = n => n % 10000 === 0 ? n / 10000 + '만' : (n / 10000).toFixed(1) + '만';
 const FINE = {no_response:'미응답 불참', same_day_cancel:'당일 취소', no_show:'참석 후 불참', late:'지각', etc:'기타'};
-const WAIVE = ['야근','부상','교통체증','스케줄 근무','생리 휴가','기타'];
+const WAIVE = ['야근','부상','교통체증','스케줄 근무','기타'];
+const leaveOf = (mid, month) => (S.leaves || []).find(l => l.member_id === mid && l.month === month);
+const leaveOnEvent = (mid, eid) => (S.leaves || []).find(l => l.member_id === mid && l.event_id === eid);
 const deadlineOf = e => e.kind === 'regular' ? new Date(`${kst(e.starts_at).date}T18:30:00+09:00`).getTime() : null;
 const CAT = {dues:'회비', credit:'적립(선납)', fine:'벌금', guest:'게스트비', expense:'지출', other:'기타', unknown:'미확인', duplicate:'중복'};
 const KIND = {regular:'정기모임', match:'경기', etc:'기타'};
@@ -312,12 +314,13 @@ const sortAll = () => {
 async function refresh() {
   [S.members, S.events, S.rsvps, S.att, S.guests, S.matches, S.goals, S.lineups, S.fines, S.notices] = await Promise.all(
     ['members','events','rsvps','attendance','event_guests','matches','goals','lineups','fines','notices'].map(t => fetchAll(t)));
+  try { S.leaves = await fetchAll('leave_passes'); } catch (e) { S.leaves = []; }
   sortAll();
   S.me = S.members.find(m => m.id === S.me.id) || S.me;
 }
 function subscribe() {
   if (S.ch) return;
-  let timer; const keys = { goals:'goals', matches:'matches', rsvps:'rsvps', lineups:'lineups', event_guests:'guests', attendance:'att', fines:'fines', notices:'notices' };
+  let timer; const keys = { goals:'goals', matches:'matches', rsvps:'rsvps', lineups:'lineups', event_guests:'guests', attendance:'att', fines:'fines', notices:'notices', leave_passes:'leaves' };
   const reload = t => { clearTimeout(timer); timer = setTimeout(async () => { S[keys[t]] = await fetchAll(t); sortAll(); if (!modalOpen()) renderTab(); }, 300); };
   let ch = sb.channel('fc-live');
   Object.keys(keys).forEach(t => { ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => reload(t)); });
@@ -341,7 +344,7 @@ function renderTab() {
   ({ home: renderHome, events: renderEvents, matches: renderMatches, dues: renderDues, admin: renderAdmin }[S.tab] || renderHome)(main);
 }
 async function reloadAndRender(...tables) {
-  const map = { members:'members', events:'events', rsvps:'rsvps', attendance:'att', event_guests:'guests', matches:'matches', goals:'goals', lineups:'lineups', fines:'fines', notices:'notices' };
+  const map = { members:'members', events:'events', rsvps:'rsvps', attendance:'att', event_guests:'guests', matches:'matches', goals:'goals', lineups:'lineups', fines:'fines', notices:'notices', leave_passes:'leaves' };
   await Promise.all(tables.map(async t => { S[map[t]] = await fetchAll(t); })); sortAll(); renderTab();
 }
 
@@ -399,11 +402,12 @@ function eventCard(e) {
     <div class="muted">${fmt(e.starts_at)}${e.place ? ' · ' + esc(e.place) : ''}${e.tournament ? ' · ' + esc(e.tournament) : ''}</div>
     ${e.memo ? `<div class="small" style="margin-top:4px">${esc(e.memo)}</div>` : ''}
     ${past ? '' : `<div class="rsvp"><button class="yes ${mine === 'attend' ? 'on' : ''}" ${lockAll ? 'disabled' : ''} onclick="rsvp(${e.id},'attend')">참석 ${yes.length}</button><button class="no ${mine === 'maybe' ? 'on' : ''}" ${closed ? 'disabled' : ''} onclick="rsvp(${e.id},'maybe')">미정 ${may.length}</button><button class="no ${mine === 'absent' ? 'on' : ''}" ${lockAll ? 'disabled' : ''} onclick="rsvp(${e.id},'absent')">불참 ${no.length}</button></div>
+      ${e.kind === 'regular' && kst(Date.now()).date <= kst(e.starts_at).date ? leaveBox(e) : ''}
       ${dl ? `<div class="muted small" style="margin-top:4px">${closed ? (mine === 'maybe' ? '마감됨 · 미정이라 참석/불참으로 바꿀 수 있어요' : '오후 6:30 투표 마감') : '당일 오후 6:30 마감 · 무응답 불참 1만원, 8:10 이후 지각 5천원'}</div>` : ''}`}
     <div class="names">
       ${att.length ? (e.kind === 'match' ? (() => { const p = [...playedOf(e.id)], c = [...cheerOf(e.id)]; return `${p.length ? `출전(${p.length}): ${p.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}${c.length ? `응원(${c.length}): ${c.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}`; })() : `${attLabel}(${att.length}): ${att.map(a => esc(nameOf(a.member_id))).join(', ')}<br>`) : ''}
       ${!att.length || !past ? (yes.length ? `참석(${yes.length}): ${yes.map(r => esc(nameOf(r.member_id))).join(', ')}` : '참석 투표 없음') : ''}
-      ${no.length && !past ? `<br>불참(${no.length}): ${no.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
+      ${no.length && !past ? `<br>불참(${no.length}): ${no.map(r => esc(nameOf(r.member_id)) + (leaveOnEvent(r.member_id, e.id) ? ' 🏖' : '')).join(', ')}` : ''}
       ${may.length && !past ? `<br>미정(${may.length}): ${may.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
       ${ef.length ? `<br><span style="color:var(--loss)">벌금 ${ef.filter(f => !f.waived).length}건</span>` : ''}
       ${!past && pending > 0 ? `<br><span style="color:var(--loss)">미응답(${pending}): ${pendList.map(m => esc(m.name)).join(', ')}</span>` : ''}
@@ -419,6 +423,19 @@ async function rsvp(eid, status) {
   await q(sb.rpc('set_rsvp', { p_event: eid, p_status: status }));
   await reloadAndRender('rsvps');
 }
+function leaveBox(e) {
+  if (S.me.position === 'coach') return '';
+  const mine = leaveOnEvent(S.me.id, e.id); const m = ym(new Date(e.starts_at)); const other = leaveOf(S.me.id, m);
+  if (mine) return `<div class="row between small" style="margin-top:6px;background:#e8f5ee;border-radius:10px;padding:8px 10px"><span>🏖 이 날 휴가권 사용 · 벌금 면제</span>${Date.now() < new Date(e.starts_at) ? `<button class="btn sm" onclick="cancelLeave(${e.id})">사용 취소</button>` : ''}</div>`;
+  if (other) { const oe = evById(other.event_id); return `<div class="muted small" style="margin-top:6px">${Number(m.slice(5))}월 휴가권 사용함${oe ? ' (' + fmtD(oe.starts_at) + ')' : ''}</div>`; }
+  return `<button class="btn sm full" style="margin-top:6px" onclick="useLeave(${e.id})">🏖 휴가권 쓰기 (${Number(m.slice(5))}월 1회 · 그날 벌금 면제)</button>`;
+}
+async function useLeave(eid) {
+  const e = evById(eid);
+  if (!confirm(`${fmtD(e.starts_at)} 정기모임에 휴가권을 쓸까요?\n· 불참으로 처리되고 그날 벌금이 면제됩니다\n· ${Number(ym(new Date(e.starts_at)).slice(5))}월에는 더 쓸 수 없어요\n· 회비 정산(출석 횟수)에는 영향 없습니다`)) return;
+  await q(sb.rpc('use_leave', { p_event: eid })); toast('휴가권을 사용했습니다'); await reloadAndRender('leave_passes', 'rsvps', 'fines');
+}
+async function cancelLeave(eid) { if (!confirm('휴가권 사용을 취소할까요? 투표는 불참으로 남아 있으니 필요하면 다시 바꿔주세요.')) return; await q(sb.rpc('cancel_leave', { p_event: eid })); toast('취소했습니다'); await reloadAndRender('leave_passes', 'fines'); }
 async function makeFines(eid) {
   if (!confirm('출석 기록 기준으로 벌금을 정리할까요?\n무응답 불참·참석 후 불참·당일 취소 1만원, 지각 5천원. 휴식회원·감독 제외.\n(출석 입력과 지각 체크를 먼저 해주세요)')) return;
   const n = await q(sb.rpc('generate_event_fines', { p_event: eid })); toast(`벌금 ${n}건 추가. 관리 → 벌금에서 면제 처리할 수 있어요`, 4000); await reloadAndRender('fines');
@@ -838,6 +855,7 @@ async function renderDues(main) {
       <p class="muted small" style="margin:-4px 4px 0">정규 4만(2회 이상) · 1회참여 2만 · 휴식 2만(연속 휴식 중 5개월 납부 후 면제, 10만원 일괄 가능)${disc ? ` · 개인 감면 ${disc}% 적용` : ''}. 골레이로·운영진은 2만원 고정.
       월말에 정기모임 실제 출석으로 정산하고, 차액은 환불 없이 다음 달로 이월됩니다. 특이사항은 납입일(1일) 전에 남겨야 이월이 인정됩니다.</p>`}
     ${me.credit ? `<div class="card row between" style="margin-top:10px"><span>내 적립금(이월·선납)</span><b>${won(me.credit)}</b></div>` : ''}
+    ${me.position === 'coach' ? '' : (() => { const l = leaveOf(me.id, cm); const le = l && evById(l.event_id); return `<div class="card row between" style="margin-top:10px"><span>🏖 ${monthLabel(cm)} 휴가권</span><b>${l ? `사용함${le ? ' (' + fmtD(le.starts_at) + ')' : ''}` : '1회 남음'}</b></div>`; })()}
     <h2>내 벌금</h2>
     <div class="card list">${myFines.length ? myFines.slice(0, 20).map(f => { const e = evById(f.event_id); return `<div class="item"><div class="grow"><b>${FINE[f.kind]}</b><div class="muted small">${e ? fmtD(e.starts_at) : fmtD(f.created_at)}${f.reason ? ' · ' + esc(f.reason) : ''}</div></div><b>${won(f.amount)}</b>${f.waived ? '<span class="tag">면제</span>' : f.paid ? '<span class="tag dues">납부</span>' : '<span class="tag unknown">미납</span>'}</div>`; }).join('') : `<div class="empty">벌금 없음 👍</div>`}
       ${unpaidF.length ? `<div class="muted small" style="margin-top:6px">미납 합계 ${won(unpaidF.reduce((a, f) => a + f.amount, 0))} · 야근·부상·교통체증 등은 인증하면 운영진이 면제해 줍니다.</div>` : ''}</div>
@@ -982,16 +1000,20 @@ function adminFines(el) {
   const all = S.fines.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   const list = all.filter(f => S.fineFilter === 'unpaid' ? !f.paid && !f.waived : S.fineFilter === 'paid' ? f.paid : S.fineFilter === 'waived' ? f.waived : true);
   const unpaidSum = all.filter(f => !f.paid && !f.waived).reduce((a, f) => a + f.amount, 0);
-  const cm = ym(); const period = {}; all.filter(f => f.waived && f.reason === '생리 휴가').forEach(f => { const e = evById(f.event_id); if (e && ym(new Date(e.starts_at)) === cm) period[f.member_id] = (period[f.member_id] || 0) + 1; });
-  el.innerHTML = `<div class="card row between"><div><div class="muted small">미납 벌금</div><div class="big">${won(unpaidSum)}</div></div><button class="btn sm primary" onclick="fineAdd()">+ 직접 추가</button></div>
+  const cm = ym(); const lv = (S.leaves || []).filter(l => l.month === cm);
+  el.innerHTML = `<div class="card"><b>🏖 ${monthLabel(cm)} 휴가권 사용 ${lv.length}명</b><div class="chipline">${lv.length ? lv.map(l => { const e = evById(l.event_id); return `<span class="chip">${esc(nameOf(l.member_id))}${e ? ' · ' + fmtD(e.starts_at) : ''}${l.used_by_staff ? ' (운영진 처리)' : ''}</span>`; }).join('') : '<span class="muted small">아직 없음</span>'}</div><div class="muted small" style="margin-top:6px">회원 본인이 일정 카드에서 쓰거나, 벌금 '면제'에서 운영진이 처리할 수 있습니다. 운영진·본인만 볼 수 있어요.</div></div>
+    <div class="card row between"><div><div class="muted small">미납 벌금</div><div class="big">${won(unpaidSum)}</div></div><button class="btn sm primary" onclick="fineAdd()">+ 직접 추가</button></div>
     <div class="seg">${[['unpaid', '미납'], ['paid', '납부'], ['waived', '면제'], ['all', '전체']].map(([k, l]) => `<button class="${S.fineFilter === k ? 'on' : ''}" onclick="S.fineFilter='${k}';renderTab()">${l}</button>`).join('')}</div>
-    <div class="card list" style="margin-top:10px">${list.length ? list.map(f => { const e = evById(f.event_id); return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(nameOf(f.member_id))}</b> <span class="muted small">${FINE[f.kind]}</span><div class="muted small">${e ? fmtD(e.starts_at) + ' ' + esc(e.title) : fmtD(f.created_at)}${f.reason ? ' · ' + esc(f.reason) : ''}${period[f.member_id] > 1 && f.reason === '생리 휴가' ? ' · <b style="color:var(--loss)">이번 달 생리 휴가 ' + period[f.member_id] + '회</b>' : ''}</div></div><b>${won(f.amount)}</b>
-      <div class="row" style="flex-basis:100%;margin-top:6px">${f.waived ? `<button class="btn sm" onclick="fineSet(${f.id},{waived:false,reason:null})">면제 취소</button>` : `<button class="btn sm" onclick="fineWaive(${f.id})">면제</button><button class="btn sm" onclick="fineSet(${f.id},{paid:${!f.paid}})">${f.paid ? '미납으로' : '납부 처리'}</button>`}<button class="btn sm danger" onclick="fineDel(${f.id})">삭제</button></div></div>`; }).join('') : `<div class="empty">해당 벌금이 없습니다</div>`}</div>
+    <div class="card list" style="margin-top:10px">${list.length ? list.map(f => { const e = evById(f.event_id); return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(nameOf(f.member_id))}</b> <span class="muted small">${FINE[f.kind]}</span><div class="muted small">${e ? fmtD(e.starts_at) + ' ' + esc(e.title) : fmtD(f.created_at)}${f.reason ? ' · ' + esc(f.reason) : ''}</div></div><b>${won(f.amount)}</b>
+      <div class="row" style="flex-basis:100%;margin-top:6px">${f.waived ? (f.reason === '휴가권' ? `<button class="btn sm" onclick="staffLeave('${f.member_id}',${f.event_id},false)">휴가권 해제</button>` : `<button class="btn sm" onclick="fineSet(${f.id},{waived:false,reason:null})">면제 취소</button>`) : `<button class="btn sm" onclick="fineWaive(${f.id})">면제</button><button class="btn sm" onclick="fineSet(${f.id},{paid:${!f.paid}})">${f.paid ? '미납으로' : '납부 처리'}</button>`}<button class="btn sm danger" onclick="fineDel(${f.id})">삭제</button></div></div>`; }).join('') : `<div class="empty">해당 벌금이 없습니다</div>`}</div>
     <p class="muted small">정기모임이 끝나면 일정 카드의 '벌금 정리'를 누르세요. 출석 기록과 투표 기록으로 자동 계산합니다. 벌금 입금(1만원·5천원 또는 미납 합계)은 입금 알림으로 자동 처리됩니다.</p>`;
 }
 function fineWaive(id) {
-  openModal(`<h3>벌금 면제</h3><p class="muted small">인증을 확인한 뒤 사유를 고르세요.</p><div class="pick">${WAIVE.map(r => `<button onclick="fineSet(${id},{waived:true,reason:'${r}'});closeModal()"><span>${r}</span></button>`).join('')}</div><button class="btn full" style="margin-top:10px" onclick="closeModal()">닫기</button>`);
+  const f = S.fines.find(x => x.id === id); const e = f && evById(f.event_id);
+  const lv = e && e.kind === 'regular' ? `<button onclick="staffLeave('${f.member_id}',${e.id},true)"><span>🏖 휴가권 사용 (월 1회)</span><span class="muted">${leaveOf(f.member_id, ym(new Date(e.starts_at))) ? '이번 달 이미 사용' : '사용 가능'}</span></button>` : '';
+  openModal(`<h3>벌금 면제</h3><p class="muted small">인증을 확인한 뒤 사유를 고르세요.</p><div class="pick">${lv}${WAIVE.map(r => `<button onclick="fineSet(${id},{waived:true,reason:'${r}'});closeModal()"><span>${r}</span></button>`).join('')}</div><button class="btn full" style="margin-top:10px" onclick="closeModal()">닫기</button>`);
 }
+async function staffLeave(mid, eid, on) { closeModal(); await q(sb.rpc('staff_set_leave', { p_member: mid, p_event: eid, p_on: on })); toast(on ? '휴가권 처리했습니다' : '휴가권을 해제했습니다'); await reloadAndRender('leave_passes', 'fines', 'rsvps'); }
 async function fineSet(id, patch) { await q(sb.from('fines').update(patch).eq('id', id)); toast('변경했습니다'); await reloadAndRender('fines'); }
 async function fineDel(id) { if (!confirm('이 벌금을 삭제할까요?')) return; await q(sb.from('fines').delete().eq('id', id)); await reloadAndRender('fines'); }
 function fineAdd() {
@@ -1119,7 +1141,7 @@ async function doPaste() { const t = val('pt').trim(); if (!t) return; const r =
 const BACKUP = [
   ['members', '회원'], ['events', '일정'], ['rsvps', '참석투표'], ['rsvp_log', '투표기록'], ['attendance', '출석'],
   ['event_guests', '게스트'], ['matches', '경기'], ['goals', '골'], ['lineups', '출전명단'], ['monthly_status', '월상태'],
-  ['dues', '회비'], ['transactions', '입출금'], ['fines', '벌금'], ['notices', '공지'], ['suggestions', '소리함'], ['notification_log', '알림기록']
+  ['dues', '회비'], ['transactions', '입출금'], ['fines', '벌금'], ['leave_passes', '휴가권'], ['notices', '공지'], ['suggestions', '소리함'], ['notification_log', '알림기록']
 ];
 function loadXlsx() {
   return window.XLSX ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => no(new Error('엑셀 도구를 불러오지 못했습니다')); document.head.appendChild(sc); });
