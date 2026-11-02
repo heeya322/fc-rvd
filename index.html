@@ -484,10 +484,10 @@ function renderHome(main) {
     <h2>${dm}월 ${dd}일 일정</h2>
     ${dayEvents.length ? dayEvents.map(eventCard).join('') : `<div class="card empty">이 날은 일정이 없습니다</div>`}
     <h2>내 기록</h2>
-    <div class="card"><div class="stats">
+    <div class="card"><div class="stats" onclick="myAttModal('${S.me.id}')" style="cursor:pointer">
       <div><b>${st.month}</b><span>이번 달 출석</span></div><div><b>${st.total}</b><span>누적 출석</span></div>
       <div><b>${st.goals}</b><span>골</span></div><div><b>${st.assists}</b><span>어시</span></div></div>
-      <div class="muted small" style="margin-top:8px">정기모임 출석률 ${st.rate}% · 경기 출전 ${st.quarters}쿼터 · ${POS[S.me.position]}</div>
+      <div class="muted small" style="margin-top:8px"><a href="#" onclick="myAttModal('${S.me.id}');return false">날짜별 출석 기록 보기 ›</a><br>정기모임 출석률 ${st.rate}% · 경기 출전 ${st.quarters}쿼터 · ${POS[S.me.position]}</div>
       ${(() => { const mf = S.fines.filter(f => f.member_id === S.me.id && !f.paid && !f.waived); return mf.length ? `<div class="small" style="margin-top:6px;color:var(--loss)" onclick="go('dues')">미납 벌금 ${mf.length}건 · ${won(mf.reduce((a, f) => a + f.amount, 0))} ›</div>` : ''; })()}
       <div class="row between" style="margin-top:8px"><span class="small">${S.me.joined_on ? esc(joinedText(S.me)) : '<span class="muted">입단일 미입력</span>'}</span><button class="btn sm" onclick="joinModal()">${S.me.joined_on ? '입단일 수정' : '입단일 입력'}</button></div></div>
     <h2>팀 전적</h2>
@@ -925,10 +925,37 @@ function mergeAsk(rid) {
   });
 }
 async function approve(id, ok) { await q(sb.rpc('staff_approve', { p_member: id, p_ok: ok })); toast(ok ? '승인했습니다' : '거절했습니다'); renderTab(); }
+// 회원별 출석 기록 (정기모임 출석·지각, 경기 출전·응원, 휴가권)
+function attHistoryHtml(mid) {
+  const rows = [];
+  S.events.forEach(e => {
+    const a = S.att.find(x => x.event_id === e.id && x.member_id === mid);
+    if (e.kind === 'regular') {
+      if (a) rows.push([e, a.late ? '지각' : '출석', a.late ? 'unknown' : 'dues']);
+      else if (leaveOnEvent(mid, e.id)) rows.push([e, '휴가권', 'credit']);
+    } else if (e.kind === 'match') {
+      if (playedOf(e.id).has(mid)) rows.push([e, '출전', 'match']);
+      else if (cheerOf(e.id).has(mid)) rows.push([e, '응원', 'guest']);
+    } else if (a) rows.push([e, '참여', 'other']);
+  });
+  if (!rows.length) return '<div class="empty">출석 기록이 없습니다</div>';
+  rows.sort((x, y) => new Date(y[0].starts_at) - new Date(x[0].starts_at));
+  const byM = {}; rows.forEach(r => { const k = ym(new Date(r[0].starts_at)); (byM[k] = byM[k] || []).push(r); });
+  return Object.entries(byM).map(([k, rs]) => {
+    const reg = rs.filter(r => r[0].kind === 'regular' && (r[1] === '출석' || r[1] === '지각')).length;
+    return `<div style="margin-top:10px"><div class="row between small"><b>${k.slice(0, 4)}년 ${monthLabel(k)}</b><span class="muted">정기 ${reg}회${rs.length > reg ? ` · 기타 ${rs.length - reg}` : ''}</span></div>
+      <div class="chipline">${rs.map(([e, l, c]) => `<span class="chip" title="${esc(e.title)}">${kst(e.starts_at).date.slice(5).replace('-', '/')} <span class="tag ${c}" style="font-size:10px;padding:0 5px">${l}</span></span>`).join('')}</div></div>`;
+  }).join('');
+}
+function myAttModal(mid) {
+  const m = S.members.find(x => x.id === mid) || S.me;
+  openModal(`<h3>${esc(m.name)} 출석 기록</h3><p class="muted small">정기모임 출석·지각, 경기 출전·응원, 휴가권 사용일을 날짜별로 보여줍니다. 회비 정산은 정기모임 출석만 셉니다.</p>${attHistoryHtml(mid)}<button class="btn full" style="margin-top:14px" onclick="closeModal()">닫기</button>`);
+}
 function memberModal(id) {
   const m = S.members.find(x => x.id === id); const adm = isAdmin(); const self = id === S.me.id;
   openModal(`<h3>${esc(m.name)} ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}</h3><div class="muted small">${m.is_roster ? '명단 회원 (앱 미가입)' : '아이디 ' + esc(m.login_id)}${m.active ? '' : ' · 탈퇴'}</div>
     ${m.is_roster ? `<button class="btn sm" style="margin-top:8px" onclick="mergeAsk('${id}')">가입한 계정과 연결(기록 합치기)</button>` : ''}
+    <details style="margin-top:10px" open><summary class="small"><b>출석 기록</b> <span class="muted">· 누적 정기모임 ${statsFor(id).total}회</span></summary><div style="max-height:34vh;overflow:auto">${attHistoryHtml(id)}</div></details>
     <label class="f">이름</label><input class="i" id="mn" value="${esc(m.name)}">
     <label class="f">입금자명 (통장에 찍히는 이름이 다르면)</label><input class="i" id="mb" value="${esc(m.bank_name || '')}">
     <label class="f">포지션</label><select class="i" id="mp"><option value="field">필드</option><option value="goleiro">골레이로 (회비 2만)</option><option value="coach">감독 (회비 없음)</option></select>
