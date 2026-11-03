@@ -860,7 +860,7 @@ async function renderDues(main) {
     <div class="card list">${myFines.length ? myFines.slice(0, 20).map(f => { const e = evById(f.event_id); return `<div class="item"><div class="grow"><b>${FINE[f.kind]}</b><div class="muted small">${e ? fmtD(e.starts_at) : fmtD(f.created_at)}${f.reason ? ' · ' + esc(f.reason) : ''}</div></div><b>${won(f.amount)}</b>${f.waived ? '<span class="tag">면제</span>' : f.paid ? '<span class="tag dues">납부</span>' : '<span class="tag unknown">미납</span>'}</div>`; }).join('') : `<div class="empty">벌금 없음 👍</div>`}
       ${unpaidF.length ? `<div class="muted small" style="margin-top:6px">미납 합계 ${won(unpaidF.reduce((a, f) => a + f.amount, 0))} · 야근·부상·교통체증 등은 인증하면 운영진이 면제해 줍니다.</div>` : ''}</div>
     <h2>내 납부 내역</h2>
-    <div class="card list">${my.length ? my.map(d => `<div class="item"><div class="grow"><b>${monthLabel(d.month)}</b> <span class="muted small">${d.month.slice(0, 4)}</span><div class="muted small">${STATUS[d.status_used] || ''} ${won(d.base)}${d.adjustment ? ` · 지난달 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : ''}</div></div><div style="text-align:right"><b>${won(d.amount_due)}</b><div>${d.paid_amount >= d.amount_due ? '<span class="tag dues">납부 완료</span>' : `<span class="tag unknown">미납 ${won(d.amount_due - d.paid_amount)}</span>`}</div></div></div>`).join('') : `<div class="empty">청구 내역이 없습니다</div>`}</div>
+    <div class="card list">${my.length ? my.map(d => `<div class="item"><div class="grow"><b>${monthLabel(d.month)}</b> <span class="muted small">${d.month.slice(0, 4)}</span><div class="muted small">${STATUS[d.status_used] || ''} ${won(d.base)}${d.adjustment ? ` · ${monthLabel(addMonth(d.month, -1))} 이월 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)} (${monthLabel(addMonth(d.month, -1))} 정기모임 출석 ${regCount(S.me.id, addMonth(d.month, -1))}회 기준)` : ''}</div></div><div style="text-align:right"><b>${won(d.amount_due)}</b><div>${d.paid_amount >= d.amount_due ? '<span class="tag dues">납부 완료</span>' : `<span class="tag unknown">미납 ${won(d.amount_due - d.paid_amount)}</span>`}</div></div></div>`).join('') : `<div class="empty">청구 내역이 없습니다</div>`}</div>
     <h2>${monthLabel(cm)} 휴식회원</h2>
     <div class="card">${rest && rest.length ? `<div class="chipline">${rest.map(x => `<span class="chip">${esc(x.name)} · 연속 ${x.months}개월</span>`).join('')}</div>` : `<div class="empty">이번 달 휴식회원이 없습니다</div>`}</div>
     <h2>지출 내역 (전체 공개)</h2>
@@ -1090,7 +1090,7 @@ async function adminDues(el) {
       <button class="btn sm full" style="margin-top:8px" onclick="shareDuesNotice('${m}')">단톡방 회비 공지 공유</button>
       <div class="muted small" style="margin-top:8px">매월 말일쯤 다음 달 청구를 생성하세요. 회원 선택 상태(휴식 포함), 지난달 정기모임 출석, 감면율, 적립금을 반영합니다. 납부 기록은 유지됩니다. 회원별 '안내'를 누르면 개별 입금 안내 문구가 만들어집니다.</div></div>
     <div class="card list">${ps.map(p => { const d = rows.find(r => r.member_id === p.id); const s = st.find(x => x.member_id === p.id)?.status;
-      return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.name)}</b>${!p.active ? ' <span class="tag">탈퇴</span>' : ''}${p.is_roster ? ' <span class="tag scheduled">명단</span>' : ''}<div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') : (fixedOf(p) != null ? `고정 ${won(fixedOf(p))} (${fixedWhy(p)})` : `선택: ${s ? STATUS[s] : '미선택(정규)'}`)}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
+      return `<div class="item" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.name)}</b>${!p.active ? ' <span class="tag">탈퇴</span>' : ''}${p.is_roster ? ' <span class="tag scheduled">명단</span>' : ''}<div class="muted small">${d ? STATUS[d.status_used] + (d.adjustment ? ` · 이월 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : '') + (d.status_used !== 'fixed' ? ` · ${monthLabel(addMonth(m, -1))} 출석 ${regCount(p.id, addMonth(m, -1))}회` : '') : (fixedOf(p) != null ? `고정 ${won(fixedOf(p))} (${fixedWhy(p)})` : `선택: ${s ? STATUS[s] : '미선택(정규)'}`)}${p.credit ? ' · 적립 ' + won(p.credit) : ''}</div></div>
       ${d ? `<b onclick="duesEdit('${p.id}','${m}')" style="text-decoration:underline dotted">${won(d.amount_due)}</b><button class="btn sm ${d.paid_amount >= d.amount_due ? '' : 'danger'}" onclick="togglePaid('${p.id}','${m}',${d.paid_amount >= d.amount_due})">${d.paid_amount >= d.amount_due ? '납부' : '미납'}</button><button class="btn sm" onclick="shareOne('${p.id}','${m}')">안내</button>` : `<button class="btn sm" onclick="duesEdit('${p.id}','${m}')">금액 입력</button>`}</div>`; }).join('')}</div>
     <button class="btn full" onclick="duesAddOther('${m}')">+ 탈퇴·명단 회원 회비 추가</button>
     <p class="muted small">금액을 누르면 직접 수정·삭제할 수 있습니다. 지난달 기록을 채울 때나 탈퇴한 회원 회비를 남길 때 쓰세요.</p>`;
@@ -1115,12 +1115,25 @@ function shareOne(id, m) {
   const d = (S._duesRows || []).find(r => r.member_id === id); const p = S.members.find(x => x.id === id); if (!d) return;
   const fs = S.fines.filter(f => f.member_id === id && !f.paid && !f.waived); const fsum = fs.reduce((a, f) => a + f.amount, 0);
   const remain = Math.max(0, d.amount_due - d.paid_amount);
-  share(`${p.name}님 ${monthLabel(m)} 회비 안내 🙂\n· ${STATUS[d.status_used] || ''} 회비 ${won(d.base)}${d.adjustment ? `\n· 지난달 정산 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)}` : ''}${d.paid_amount && remain ? `\n· 적립금·기납부 차감 -${won(d.paid_amount)}` : ''}${fsum ? `\n· 미납 벌금 ${won(fsum)} (${fs.map(f => FINE[f.kind]).join(', ')})` : ''}\n\n입금하실 금액: ${won(remain + fsum)}${remain + fsum === 0 ? ' (납부 완료!)' : ''}\n앱에서 확인 👉 ${appUrl()}`);
+  share(`${p.name}님 ${monthLabel(m)} 회비 안내 🙂\n· ${STATUS[d.status_used] || ''} 회비 ${won(d.base)}${d.adjustment ? `\n· ${monthLabel(addMonth(m, -1))} 이월 ${d.adjustment > 0 ? '+' : ''}${won(d.adjustment)} (${monthLabel(addMonth(m, -1))} 정기모임 출석 ${regCount(id, addMonth(m, -1))}회 기준)` : ''}${d.paid_amount && remain ? `\n· 적립금·기납부 차감 -${won(d.paid_amount)}` : ''}${fsum ? `\n· 미납 벌금 ${won(fsum)} (${fs.map(f => FINE[f.kind]).join(', ')})` : ''}\n\n입금하실 금액: ${won(remain + fsum)}${remain + fsum === 0 ? ' (납부 완료!)' : ''}\n앱에서 확인 👉 ${appUrl()}`);
 }
 function shareDuesNotice(m) {
-  share(`[FC회전문] ${monthLabel(m)} 회비 안내\n📅 납입일: ${Number(m.slice(5))}월 1일\n· 정규 4만원 / 1회참여 2만원 / 휴식 2만원\n· 골레이로·운영진 2만원 고정\n· 본인 금액(지난달 정산·벌금 포함)은 앱 회비 탭에서 확인해주세요\n· 부상·일정 등 특이사항은 납입일 전에 앱에 남겨주세요\n👉 ${appUrl()}`);
+  share(`[FC회전문] ${monthLabel(m)} 회비 안내\n📅 납입일: ${Number(m.slice(5))}월 1일\n· 정규 4만원 / 1회참여 2만원 / 휴식 2만원\n· 골레이로·운영진 2만원 고정\n· 본인 금액(지난달 이월·벌금 포함)은 앱 회비 탭에서 확인해주세요\n· 부상·일정 등 특이사항은 납입일 전에 앱에 남겨주세요\n👉 ${appUrl()}`);
 }
-async function genDues(m) { const n = await q(sb.rpc('generate_dues', { p_month: m })); toast(`${n}명 청구 완료`); await refresh(); renderTab(); }
+const regCount = (mid, m) => S.att.filter(a => a.member_id === mid && evById(a.event_id)?.kind === 'regular' && ym(new Date(evById(a.event_id).starts_at)) === m).length;
+async function genDues(m) {
+  const prev = addMonth(m, -1); const now = Date.now();
+  const evs = S.events.filter(e => e.kind === 'regular' && ym(new Date(e.starts_at)) === prev);
+  const noAtt = evs.filter(e => new Date(e.starts_at) < now && !S.att.some(a => a.event_id === e.id));
+  const notYet = evs.filter(e => new Date(e.starts_at) >= now);
+  const warn = [];
+  if (noAtt.length) warn.push(`· 출석 입력 안 한 ${monthLabel(prev)} 정기모임: ${noAtt.map(e => fmtD(e.starts_at)).join(', ')}`);
+  if (notYet.length) warn.push(`· 아직 안 끝난 ${monthLabel(prev)} 정기모임: ${notYet.map(e => fmtD(e.starts_at)).join(', ')}`);
+  if (warn.length && !confirm(`${monthLabel(m)} 회비는 ${monthLabel(prev)} 정기모임 출석으로 정산합니다.\n\n${warn.join('\n')}\n\n이대로 계산하면 출석이 적게 잡혀 회비가 틀릴 수 있어요. 출석을 먼저 입력하는 걸 권장합니다.\n그래도 지금 계산할까요?`)) return;
+  return genDuesRun(m);
+}
+async function genDuesRun(m) {
+  const n = await q(sb.rpc('generate_dues', { p_month: m })); toast(`${n}명 청구 완료`); await refresh(); renderTab(); }
 async function rematch() { const n = await q(sb.rpc('rematch_unknown')); toast(`미확인 ${n}건 다시 확인했습니다`); renderTab(); }
 async function togglePaid(id, m, isPaid) {
   if (!confirm(isPaid ? '미납으로 되돌릴까요?' : '입금 알림 없이 직접 납부 처리할까요? (현금 등)')) return;
