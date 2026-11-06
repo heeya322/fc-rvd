@@ -184,7 +184,9 @@ const fmt = ts => new Date(ts).toLocaleString('ko-KR', {timeZone:TZ, month:'nume
 const fmtD = ts => new Date(ts).toLocaleDateString('ko-KR', {timeZone:TZ, month:'numeric', day:'numeric', weekday:'short'});
 const addMonth = (m, k) => { let [y, mo] = m.split('-').map(Number); mo += k; while (mo > 12) { mo -= 12; y++; } while (mo < 1) { mo += 12; y--; } return `${y}-${String(mo).padStart(2,'0')}`; };
 const monthLabel = m => `${Number(m.slice(5))}월`;
-const nameOf = id => S.members.find(m => m.id === id)?.name || '(알 수 없음)';
+// 탈퇴 회원은 관리 탭 밖에서는 이름이 보이지 않음
+const isLive = id => S.members.some(m => m.id === id && m.active && m.approved);
+const nameOf = id => { const m = S.members.find(x => x.id === id); if (!m) return '탈퇴 회원'; if (m.active === false && S.tab !== 'admin') return '탈퇴 회원'; return m.name; };
 const isStaff = () => ['staff','admin'].includes(S.me?.role);
 const isAdmin = () => S.me?.role === 'admin';
 const isCoach = () => S.me?.position === 'coach';
@@ -423,14 +425,15 @@ function joinedText(m) {
 
 // ===== 일정 카드 =====
 function eventCard(e) {
-  const rs = S.rsvps.filter(r => r.event_id === e.id);
+  let rs = S.rsvps.filter(r => r.event_id === e.id);
+  rs = rs.filter(r => isLive(r.member_id));
   const yes = rs.filter(r => r.status === 'attend'), no = rs.filter(r => r.status === 'absent'), may = rs.filter(r => r.status === 'maybe');
   const mine = rs.find(r => r.member_id === S.me.id)?.status;
   const past = new Date(e.starts_at) < Date.now() - 3 * 3600e3;
   const dl = deadlineOf(e); const closed = dl && Date.now() > dl;
   const lockAll = closed && mine !== 'maybe';
   const ef = S.fines.filter(f => f.event_id === e.id);
-  const att = S.att.filter(a => a.event_id === e.id);
+  const att = S.att.filter(a => a.event_id === e.id && isLive(a.member_id));
   const gs = S.guests.filter(g => g.event_id === e.id);
   const voted = new Set(rs.map(r => r.member_id));
   const pendList = actives().filter(m => !m.is_roster && !voted.has(m.id));
@@ -448,7 +451,7 @@ function eventCard(e) {
       ${e.kind === 'regular' && kst(Date.now()).date <= kst(e.starts_at).date ? leaveBox(e) : ''}
       ${dl ? `<div class="muted small" style="margin-top:4px">${closed ? (mine === 'maybe' ? '마감됨 · 미정이라 참석/불참으로 바꿀 수 있어요' : '오후 6:30 투표 마감') : '당일 오후 6:30 마감 · 무응답 불참 1만원, 8:10 이후 지각 5천원'}</div>` : ''}`}
     <div class="names">
-      ${att.length ? (e.kind === 'match' ? (() => { const p = [...playedOf(e.id)], c = [...cheerOf(e.id)]; return `${p.length ? `출전(${p.length}): ${p.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}${c.length ? `응원(${c.length}): ${c.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}`; })() : `${attLabel}(${att.length}): ${att.map(a => esc(nameOf(a.member_id))).join(', ')}<br>`) : ''}
+      ${att.length ? (e.kind === 'match' ? (() => { const p = [...playedOf(e.id)].filter(isLive), c = [...cheerOf(e.id)].filter(isLive); return `${p.length ? `출전(${p.length}): ${p.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}${c.length ? `응원(${c.length}): ${c.map(id => esc(nameOf(id))).join(', ')}<br>` : ''}`; })() : `${attLabel}(${att.length}): ${att.map(a => esc(nameOf(a.member_id))).join(', ')}<br>`) : ''}
       ${!att.length || !past ? (yes.length ? `참석(${yes.length}): ${yes.map(r => esc(nameOf(r.member_id))).join(', ')}` : '참석 투표 없음') : ''}
       ${no.length && !past ? `<br>불참(${no.length}): ${no.map(r => esc(nameOf(r.member_id)) + (leaveOnEvent(r.member_id, e.id) ? ' 🏖' : '')).join(', ')}` : ''}
       ${may.length && !past ? `<br>미정(${may.length}): ${may.map(r => esc(nameOf(r.member_id))).join(', ')}` : ''}
@@ -727,15 +730,16 @@ function linkGuest(gid, eid) {
 function renderMatches(main) {
   if (S.openMatch) return renderMatchDetail(main, S.openMatch);
   const r = record();
-  const rankRows = arr => arr.length ? arr.map(([id, n], i) => `<div class="rank" onclick="event.stopPropagation();myAttModal('${id}')" style="cursor:pointer"><i>${arr.findIndex(x => x[1] === n) + 1}</i><span>${esc(nameOf(id))}${S.members.find(m => m.id === id)?.active === false ? ' <span class="muted small">(탈퇴)</span>' : ''}</span><b>${n}</b></div>`).join('') : `<div class="empty">기록 없음</div>`;
+  const rankRows = arr => arr.length ? arr.map(([id, n], i) => `<div class="rank" onclick="event.stopPropagation();myAttModal('${id}')" style="cursor:pointer"><i>${arr.findIndex(x => x[1] === n) + 1}</i><span>${esc(nameOf(id))}</span><b>${n}</b></div>`).join('') : `<div class="empty">기록 없음</div>`;
   const Y = S.rankYear || thisYear();
   const mYear = mid => { const mt = S.matches.find(x => x.id === mid); return mt && inYear(mt.played_at, Y); };
-  const cnt = f => { const c = {}; S.goals.filter(g => mYear(g.match_id)).forEach(g => { const id = f(g); if (id) c[id] = (c[id] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 5); };
+  const pl = new Set(players().map(p => p.id));
+  const cnt = f => { const c = {}; S.goals.filter(g => mYear(g.match_id)).forEach(g => { const id = f(g); if (id && pl.has(id)) c[id] = (c[id] || 0) + 1; }); return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 5); };
   const inc = (o, id) => { o[id] = (o[id] || 0) + 1; };
   const cheer = {};
   S.events.filter(e => e.kind === 'match' && inYear(e.starts_at, Y)).forEach(e => { cheerOf(e.id).forEach(id => inc(cheer, id)); });
   const attRank = players().map(p => [p.id, kingOf(p.id, Y).total]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
-  const cheerRank = Object.entries(cheer).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
+  const cheerRank = Object.entries(cheer).filter(([id]) => pl.has(id)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
   const tagOf = m => m.status === 'live' ? ['match', 'LIVE'] : m.status === 'scheduled' ? ['scheduled', '예정'] : [matchScore(m).res, { W: '승', D: '무', L: '패' }[matchScore(m).res]];
   main.innerHTML = `
     <div class="card"><div class="big">${r.n}전 ${r.w}승 ${r.d}무 ${r.l}패</div><div class="muted">득점 ${r.gf} · 실점 ${r.ga} (종료된 경기 기준)</div></div>
@@ -746,7 +750,7 @@ function renderMatches(main) {
     <div class="row between" style="margin:22px 2px 10px"><h2 style="margin:0">${Y}년 순위</h2>${yearPicker(rankYears(), Y, "S.rankYear='$Y';renderTab()", 'width:auto')}</div>
     <div class="rankgrid">
       <div class="card"><b>⚽ 득점왕</b>${rankRows(cnt(g => g.own_goal ? null : g.scorer_id))}</div>
-      <div class="card"><b>🅰️ 도움왕</b>${rankRows(Object.entries(assistCounts(mYear)).sort((a, b) => b[1] - a[1]).slice(0, 5))}</div>
+      <div class="card"><b>🅰️ 도움왕</b>${rankRows(Object.entries(assistCounts(mYear)).filter(([id]) => pl.has(id)).sort((a, b) => b[1] - a[1]).slice(0, 5))}</div>
       <div class="card"><b>📣 응원왕</b>${rankRows(cheerRank)}</div>
       <div class="card" onclick="kingModal('${Y}')" style="cursor:pointer"><b>👑 출석왕</b>${rankRows(attRank)}<div class="muted small" style="margin-top:4px">전체 순위 ›</div></div>
     </div>
@@ -773,7 +777,8 @@ function renderMatchDetail(main, id) {
   const m = S.matches.find(x => x.id === id); if (!m) { S.openMatch = null; return renderMatches(main); }
   const xa = (S.xast || []).filter(a => a.match_id === id); const imported = xa.length > 0 || /사말라 기록/.test(m.memo || '');
   const impMap = {}; S.goals.filter(g => g.match_id === id && g.scorer_id).forEach(g => { (impMap[g.scorer_id] = impMap[g.scorer_id] || [0, 0])[0]++; }); xa.forEach(a => { (impMap[a.member_id] = impMap[a.member_id] || [0, 0])[1] += a.count; });
-  const impRows = Object.entries(impMap).map(([pid, [g, a]]) => [pid, g, a]).sort((x, y) => (y[1] + y[2]) - (x[1] + x[2]) || y[1] - x[1]);
+  const goneAgg = Object.entries(impMap).filter(([pid]) => !isLive(pid)).reduce((t, [, [g, a]]) => [t[0] + g, t[1] + a], [0, 0]);
+  const impRows = Object.entries(impMap).filter(([pid]) => isLive(pid)).map(([pid, [g, a]]) => [pid, g, a]).sort((x, y) => (y[1] + y[2]) - (x[1] + x[2]) || y[1] - x[1]);
   const unk = S.goals.filter(g => g.match_id === id && !g.scorer_id && !g.own_goal).length;
   const s = matchScore(m); const gl = S.goals.filter(g => g.match_id === id).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const st = isStaff(); const live = m.status === 'live';
@@ -789,7 +794,7 @@ function renderMatchDetail(main, id) {
       ${st && live ? `<div class="ctrl"><button class="goal" onclick="addGoal(${id})">+ 우리 골</button><button onclick="theirGoal(${id},1)">+ 상대 골</button><button onclick="theirGoal(${id},-1)">− 상대 골</button></div>` : ''}
     </div>
     ${st ? `<div class="row" style="flex-wrap:wrap;margin-bottom:10px">${m.status === 'scheduled' ? `<button class="btn primary" style="flex:1" onclick="setMatchStatus(${id},'live')">경기 시작 (실시간 기록)</button>` : live ? `<button class="btn primary" style="flex:1" onclick="setMatchStatus(${id},'done')">경기 종료</button>` : `<button class="btn sm" onclick="setMatchStatus(${id},'live')">다시 진행 중으로</button>`}</div>` : ''}
-    ${imported ? `<h2>선수 기록</h2><div class="card">${m.memo ? `<div class="muted small" style="margin-bottom:8px">${esc(m.memo)}</div>` : ''}${impRows.length ? `<div class="list">${impRows.map(([pid, g, a]) => `<div class="item"><div class="grow"><b>${esc(nameOf(pid))}</b>${S.members.find(x => x.id === pid)?.active === false ? ' <span class="muted small">(탈퇴)</span>' : ''}</div><span class="small">⚽ ${g}골 · 🅰️ ${a}도움</span></div>`).join('')}</div>` : '<div class="empty">기록 없음</div>'}${unk ? `<div class="muted small" style="margin-top:6px">득점자 미기록 ${unk}골</div>` : ''}<div class="muted small" style="margin-top:6px">가져온 기록이라 골·도움은 선수별 합계로만 표시합니다(어떤 골을 누가 도왔는지는 원본에 없음).</div></div>` : ''}
+    ${imported ? `<h2>선수 기록</h2><div class="card">${m.memo ? `<div class="muted small" style="margin-bottom:8px">${esc(m.memo)}</div>` : ''}${impRows.length ? `<div class="list">${impRows.map(([pid, g, a]) => `<div class="item"><div class="grow"><b>${esc(nameOf(pid))}</b></div><span class="small">⚽ ${g}골 · 🅰️ ${a}도움</span></div>`).join('')}</div>` : '<div class="empty">기록 없음</div>'}${goneAgg[0] || goneAgg[1] ? `<div class="muted small" style="margin-top:6px">탈퇴 회원 기록 ${goneAgg[0]}골 · ${goneAgg[1]}도움</div>` : ''}${unk ? `<div class="muted small" style="margin-top:6px">득점자 미기록 ${unk}골</div>` : ''}<div class="muted small" style="margin-top:6px">가져온 기록이라 골·도움은 선수별 합계로만 표시합니다(어떤 골을 누가 도왔는지는 원본에 없음).</div></div>` : ''}
     ${imported ? '' : `<h2>골 기록</h2>
     <div class="card list">${gl.length ? gl.map((g, i) => `<div class="item"><b>${i + 1}</b><div class="grow">${g.quarter ? `<span class="tag">${g.quarter}Q</span> ` : ''}${g.own_goal ? '상대 자책골' : (g.scorer_id ? esc(nameOf(g.scorer_id)) : '<span class="muted">득점자 미기록</span>')}${g.assist_id ? `<span class="muted"> (어시 ${esc(nameOf(g.assist_id))})</span>` : ''}</div>${st ? `<button class="btn sm danger" onclick="delGoal(${g.id})">삭제</button>` : ''}</div>`).join('') : `<div class="empty">아직 우리 골이 없습니다</div>`}
       ${st && !live && m.status === 'done' ? `<button class="btn sm" style="margin-top:8px" onclick="addGoal(${id})">+ 골 추가(사후 입력)</button>` : ''}</div>`}
@@ -798,7 +803,7 @@ function renderMatchDetail(main, id) {
     <div class="card" style="margin-top:8px;background:#1d3272;border-color:#1d3272">${courtSvg(id, S.quarter, st)}
       ${st ? `<div class="row" style="margin-top:8px">${S.quarter > 1 ? `<button class="btn sm" style="flex:1" onclick="copyLineup(${id},${S.quarter})">${S.quarter - 1}Q 명단 복사</button>` : ''}<button class="btn sm" style="flex:1" onclick="clearLineup(${id},${S.quarter})">${S.quarter}Q 비우기</button></div>` : ''}</div>
     ${playedList.length ? `<div class="card"><b>출전 요약</b><div class="chipline">${playedList.map(([mid, set]) => `<span class="chip">${esc(nameOf(mid))} ${set.size}Q</span>`).join('')}</div></div>` : ''}
-    ${m.event_id ? (() => { const p = [...playedOf(m.event_id)], c = [...cheerOf(m.event_id)]; return `<h2>출전 ${p.length}명 · 응원 ${c.length}명</h2><div class="card">${p.length ? `<div class="small"><b>출전</b></div><div class="chipline">${p.map(id => `<span class="chip">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${c.length ? `<div class="small" style="margin-top:8px"><b>📣 응원</b></div><div class="chipline">${c.map(id => `<span class="chip g">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${!p.length && !c.length ? '<div class="empty">아직 체크 전입니다</div>' : ''}${st ? `<button class="btn sm" style="margin-top:8px" onclick="attendanceModal(${m.event_id})">출전·응원 체크</button>` : ''}</div>`; })() : ''}
+    ${m.event_id ? (() => { const p = [...playedOf(m.event_id)].filter(isLive), c = [...cheerOf(m.event_id)].filter(isLive); return `<h2>출전 ${p.length}명 · 응원 ${c.length}명</h2><div class="card">${p.length ? `<div class="small"><b>출전</b></div><div class="chipline">${p.map(id => `<span class="chip">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${c.length ? `<div class="small" style="margin-top:8px"><b>📣 응원</b></div><div class="chipline">${c.map(id => `<span class="chip g">${esc(nameOf(id))}</span>`).join('')}</div>` : ''}${!p.length && !c.length ? '<div class="empty">아직 체크 전입니다</div>' : ''}${st ? `<button class="btn sm" style="margin-top:8px" onclick="attendanceModal(${m.event_id})">출전·응원 체크</button>` : ''}</div>`; })() : ''}
     <h2>감독 피드백</h2>
     ${m.feedback ? `<div class="fb">${esc(m.feedback)}</div>` : `<div class="card empty">아직 피드백이 없습니다</div>`}
     ${st || isCoach() ? `<button class="btn sm" style="margin-top:8px" onclick="feedbackModal(${id})">${m.feedback ? '피드백 수정' : '피드백 작성'}</button>` : ''}
