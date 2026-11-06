@@ -364,6 +364,12 @@ function legacyOf(mid) { const am = appRegMonths(); return (S.legacy || []).filt
 const legacySum = mid => legacyOf(mid).reduce((a, l) => a + l.count, 0);
 // 출석왕 = 정기모임 출석 + 경기(친선·대회) 출전 + 이전 출석부 기록
 const thisYear = () => ym().slice(0, 4);
+// 연도 선택: 3개 이하면 버튼, 넘으면 드롭다운 (onpick은 '${v}' 자리에 연도가 들어가는 코드)
+function yearPicker(ys, cur, onpick, style) {
+  if (ys.length <= 1) return '';
+  if (ys.length <= 3) return `<div class="seg" style="${style || ''}">${ys.map(v => `<button class="${v === cur ? 'on' : ''}" onclick="${onpick.replace(/\$Y/g, v)}">${v}년</button>`).join('')}</div>`;
+  return `<select class="i" style="width:auto;min-height:36px;padding:4px 10px;${style || ''}" onchange="${onpick.replace(/'\$Y'/g, 'this.value')}">${ys.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${v}년</option>`).join('')}</select>`;
+}
 const inYear = (ts, y) => !y || ym(new Date(ts)).slice(0, 4) === y;
 // 출석왕은 그 해 기록만 (y 생략 시 올해). y = 'all' 이면 전체
 function kingOf(mid, y) {
@@ -382,7 +388,7 @@ function kingModal(y) {
   y = y || S.rankYear || thisYear();
   const list = players().map(p => ({ p, k: kingOf(p.id, y) })).filter(x => x.k.total > 0).sort((a, b) => b.k.total - a.k.total || a.p.name.localeCompare(b.p.name, 'ko'));
   let rank = 0, prev = null;
-  openModal(`<h3>👑 ${y}년 출석왕 전체 순위</h3><div class="seg" style="margin:6px 0">${rankYears().map(v => `<button class="${v === y ? 'on' : ''}" onclick="kingModal('${v}')">${v}년</button>`).join('')}</div><p class="muted small">${y}년 정기모임 출석 + 경기(친선·대회) 출전 + 이전 출석부 기록. 이름을 누르면 날짜별 기록이 보여요.</p>
+  openModal(`<h3>👑 ${y}년 출석왕 전체 순위</h3><div style="margin:6px 0">${yearPicker(rankYears(), y, "kingModal('$Y')", '')}</div><p class="muted small">${y}년 정기모임 출석 + 경기(친선·대회) 출전 + 이전 출석부 기록. 이름을 누르면 날짜별 기록이 보여요.</p>
     <div class="list">${list.map(({ p, k }, i) => { if (k.total !== prev) { rank = i + 1; prev = k.total; } return `<div class="item" onclick="myAttModal('${p.id}')" style="cursor:pointer"><b style="width:26px">${rank}</b><div class="grow"><b>${esc(p.name)}</b><div class="muted small">정기 ${k.reg} · 경기 ${k.mt}${k.leg ? ' · 이전 기록 ' + k.leg : ''}</div></div><b>${k.total}회</b></div>`; }).join('')}</div>
     <button class="btn full" style="margin-top:12px" onclick="closeModal()">닫기</button>`);
 }
@@ -729,7 +735,7 @@ function renderMatches(main) {
     <h2>경기</h2>
     ${S.mSel ? `<div class="card row between" style="border-color:var(--loss)"><span class="small">지울 경기를 체크하세요 · <b id="mselN">${S.msel.size}</b>개 선택</span><button class="btn sm danger" onclick="bulkDeleteMatches()">삭제</button></div>` : ''}
     <div class="card list">${S.matches.length ? S.matches.map(m => { const s = matchScore(m); const [c, l] = tagOf(m); return `<div class="item" onclick="${S.mSel ? `this.querySelector('input').click()` : `openMatchView(${m.id})`}">${S.mSel ? `<input type="checkbox" style="width:20px;height:20px;accent-color:var(--loss)" ${S.msel.has(m.id) ? 'checked' : ''} onclick="event.stopPropagation();this.checked?S.msel.add(${m.id}):S.msel.delete(${m.id});document.getElementById('mselN').textContent=S.msel.size">` : ''}<span class="tag ${c}">${l}</span><div class="grow"><b>vs ${esc(m.opponent)}</b><div class="muted small">${fmt(m.played_at)} · ${m.kind === 'tournament' ? '대회' + (m.tournament ? ' ' + esc(m.tournament) : '') : '친선'}</div></div><b style="font-size:18px">${m.status === 'scheduled' ? '-' : s.ours + ':' + s.theirs}</b></div>`; }).join('') : `<div class="empty">경기 기록이 없습니다</div>`}</div>
-    <div class="row between" style="margin:22px 2px 10px"><h2 style="margin:0">${Y}년 순위</h2><div class="seg" style="width:auto">${rankYears().map(v => `<button class="${v === Y ? 'on' : ''}" onclick="S.rankYear='${v}';renderTab()">${v}</button>`).join('')}</div></div>
+    <div class="row between" style="margin:22px 2px 10px"><h2 style="margin:0">${Y}년 순위</h2>${yearPicker(rankYears(), Y, "S.rankYear='$Y';renderTab()", 'width:auto')}</div>
     <div class="rankgrid">
       <div class="card"><b>⚽ 득점왕</b>${rankRows(cnt(g => g.own_goal ? null : g.scorer_id))}</div>
       <div class="card"><b>🅰️ 도움왕</b>${rankRows(cnt(g => g.assist_id))}</div>
@@ -991,7 +997,7 @@ function histYears(mid) {
   legacyOf(mid).forEach(l => ys.add(l.month.slice(0, 4)));
   return [...ys].sort().reverse();
 }
-function yearTabs(mid, y, fn) { const ys = histYears(mid); return ys.length > 1 ? `<div class="seg" style="margin:8px 0">${ys.map(v => `<button class="${v === y ? 'on' : ''}" onclick="${fn}('${mid}','${v}')">${v}년</button>`).join('')}</div>` : ''; }
+function yearTabs(mid, y, fn) { const p = yearPicker(histYears(mid), y, `${fn}('${mid}','$Y')`, ''); return p ? `<div style="margin:8px 0">${p}</div>` : ''; }
 function memberHist(mid, y) { const el = document.getElementById('mhist'); if (el) el.innerHTML = yearTabs(mid, y, 'memberHist') + attHistoryHtml(mid, y); }
 function myAttModal(mid, yy) {
   const m = S.members.find(x => x.id === mid) || S.me;
