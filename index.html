@@ -380,7 +380,7 @@ function rankYears() {
 }
 function kingModal(y) {
   y = y || S.rankYear || thisYear();
-  const list = players().map(p => ({ p, k: kingOf(p.id, y) })).sort((a, b) => b.k.total - a.k.total || a.p.name.localeCompare(b.p.name, 'ko'));
+  const list = players().map(p => ({ p, k: kingOf(p.id, y) })).filter(x => x.k.total > 0).sort((a, b) => b.k.total - a.k.total || a.p.name.localeCompare(b.p.name, 'ko'));
   let rank = 0, prev = null;
   openModal(`<h3>👑 ${y}년 출석왕 전체 순위</h3><div class="seg" style="margin:6px 0">${rankYears().map(v => `<button class="${v === y ? 'on' : ''}" onclick="kingModal('${v}')">${v}년</button>`).join('')}</div><p class="muted small">${y}년 정기모임 출석 + 경기(친선·대회) 출전 + 이전 출석부 기록. 이름을 누르면 날짜별 기록이 보여요.</p>
     <div class="list">${list.map(({ p, k }, i) => { if (k.total !== prev) { rank = i + 1; prev = k.total; } return `<div class="item" onclick="myAttModal('${p.id}')" style="cursor:pointer"><b style="width:26px">${rank}</b><div class="grow"><b>${esc(p.name)}</b><div class="muted small">정기 ${k.reg} · 경기 ${k.mt}${k.leg ? ' · 이전 기록 ' + k.leg : ''}</div></div><b>${k.total}회</b></div>`; }).join('')}</div>
@@ -956,7 +956,7 @@ function mergeAsk(rid) {
 }
 async function approve(id, ok) { await q(sb.rpc('staff_approve', { p_member: id, p_ok: ok })); toast(ok ? '승인했습니다' : '거절했습니다'); renderTab(); }
 // 회원별 출석 기록 (정기모임 출석·지각, 경기 출전·응원, 휴가권)
-function attHistoryHtml(mid) {
+function attHistoryHtml(mid, y) {
   const rows = [];
   S.events.forEach(e => {
     const a = S.att.find(x => x.event_id === e.id && x.member_id === mid);
@@ -968,8 +968,9 @@ function attHistoryHtml(mid) {
       else if (cheerOf(e.id).has(mid)) rows.push([e, '응원', 'guest']);
     } else if (a) rows.push([e, '참여', 'other']);
   });
-  const leg = {}; legacyOf(mid).forEach(l => leg[l.month] = l.count);
-  if (!rows.length && !Object.keys(leg).length) return '<div class="empty">출석 기록이 없습니다</div>';
+  const leg = {}; legacyOf(mid).forEach(l => { if (!y || l.month.slice(0, 4) === y) leg[l.month] = l.count; });
+  if (y) { for (let i = rows.length - 1; i >= 0; i--) if (!inYear(rows[i][0].starts_at, y)) rows.splice(i, 1); }
+  if (!rows.length && !Object.keys(leg).length) return `<div class="empty">${y ? y + '년 ' : ''}출석 기록이 없습니다</div>`;
   rows.sort((x, y) => new Date(y[0].starts_at) - new Date(x[0].starts_at));
   const byM = {}; rows.forEach(r => { const k = ym(new Date(r[0].starts_at)); (byM[k] = byM[k] || []).push(r); });
   Object.keys(leg).forEach(k => { byM[k] = byM[k] || []; });
@@ -983,16 +984,25 @@ function attHistoryHtml(mid) {
       <div class="chipline">${rs.map(([e, l, c]) => `<span class="chip" title="${esc(e.title)}">${kst(e.starts_at).date.slice(5).replace('-', '/')} <span class="tag ${c}" style="font-size:10px;padding:0 5px">${l}</span></span>`).join('')}</div></div>`;
   }).join('');
 }
-function myAttModal(mid) {
+function histYears(mid) {
+  const ys = new Set([thisYear()]);
+  S.att.filter(a => a.member_id === mid).forEach(a => { const e = evById(a.event_id); if (e) ys.add(ym(new Date(e.starts_at)).slice(0, 4)); });
+  S.events.filter(e => e.kind === 'match' && (playedOf(e.id).has(mid) || cheerOf(e.id).has(mid))).forEach(e => ys.add(ym(new Date(e.starts_at)).slice(0, 4)));
+  legacyOf(mid).forEach(l => ys.add(l.month.slice(0, 4)));
+  return [...ys].sort().reverse();
+}
+function yearTabs(mid, y, fn) { const ys = histYears(mid); return ys.length > 1 ? `<div class="seg" style="margin:8px 0">${ys.map(v => `<button class="${v === y ? 'on' : ''}" onclick="${fn}('${mid}','${v}')">${v}년</button>`).join('')}</div>` : ''; }
+function memberHist(mid, y) { const el = document.getElementById('mhist'); if (el) el.innerHTML = yearTabs(mid, y, 'memberHist') + attHistoryHtml(mid, y); }
+function myAttModal(mid, yy) {
   const m = S.members.find(x => x.id === mid) || S.me;
-  const y = S.rankYear || thisYear(); const k = kingOf(mid, y); const all = kingOf(mid, 'all');
-  openModal(`<h3>${esc(m.name)} 출석 기록</h3><div class="card row between" style="margin:8px 0"><div><div class="muted small">${y}년 출석왕 집계</div><div class="big">${k.total}회</div><div class="muted small">전체 누적 ${all.total}회</div></div><div class="muted small" style="text-align:right">정기모임 ${k.reg}회<br>경기 출전 ${k.mt}회${k.leg ? `<br>이전 출석부 ${k.leg}회` : ''}</div></div><p class="muted small">회비 정산은 정기모임 출석만 셉니다.</p>${attHistoryHtml(mid)}<button class="btn full" style="margin-top:14px" onclick="closeModal()">닫기</button>`);
+  const y = yy || S.rankYear || thisYear(); const k = kingOf(mid, y); const all = kingOf(mid, 'all');
+  openModal(`<h3>${esc(m.name)} 출석 기록</h3><div class="card row between" style="margin:8px 0"><div><div class="muted small">${y}년 출석왕 집계</div><div class="big">${k.total}회</div><div class="muted small">전체 누적 ${all.total}회</div></div><div class="muted small" style="text-align:right">정기모임 ${k.reg}회<br>경기 출전 ${k.mt}회${k.leg ? `<br>이전 출석부 ${k.leg}회` : ''}</div></div>${yearTabs(mid, y, 'myAttModal')}<p class="muted small">회비 정산은 정기모임 출석만 셉니다.</p>${attHistoryHtml(mid, y)}<button class="btn full" style="margin-top:14px" onclick="closeModal()">닫기</button>`);
 }
 function memberModal(id) {
   const m = S.members.find(x => x.id === id); const adm = isAdmin(); const self = id === S.me.id;
   openModal(`<h3>${esc(m.name)} ${m.role !== 'member' ? `<span class="tag ${m.role}">${ROLE[m.role]}</span>` : ''}</h3><div class="muted small">${m.is_roster ? '명단 회원 (앱 미가입)' : '아이디 ' + esc(m.login_id)}${m.active ? '' : ' · 탈퇴'}</div>
     ${m.is_roster ? `<button class="btn sm" style="margin-top:8px" onclick="mergeAsk('${id}')">가입한 계정과 연결(기록 합치기)</button>` : ''}
-    <details style="margin-top:10px" open><summary class="small"><b>출석 기록</b> <span class="muted">· ${thisYear()}년 ${kingOf(id).total}회 (정기 ${kingOf(id).reg} · 경기 ${kingOf(id).mt}${kingOf(id).leg ? ' · 이전 ' + kingOf(id).leg : ''}) · 전체 ${kingOf(id, 'all').total}회</span></summary><div style="max-height:34vh;overflow:auto">${attHistoryHtml(id)}</div></details>
+    <details style="margin-top:10px" open><summary class="small"><b>출석 기록</b> <span class="muted">· ${thisYear()}년 ${kingOf(id).total}회 (정기 ${kingOf(id).reg} · 경기 ${kingOf(id).mt}${kingOf(id).leg ? ' · 이전 ' + kingOf(id).leg : ''}) · 전체 ${kingOf(id, 'all').total}회</span></summary><div id="mhist" style="max-height:34vh;overflow:auto">${yearTabs(id, thisYear(), 'memberHist')}${attHistoryHtml(id, thisYear())}</div></details>
     <label class="f">이름</label><input class="i" id="mn" value="${esc(m.name)}">
     <label class="f">입금자명 (통장에 찍히는 이름이 다르면)</label><input class="i" id="mb" value="${esc(m.bank_name || '')}">
     <label class="f">포지션</label><select class="i" id="mp"><option value="field">필드</option><option value="goleiro">골레이로 (회비 2만)</option><option value="coach">감독 (회비 없음)</option></select>
