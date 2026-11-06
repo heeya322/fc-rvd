@@ -315,6 +315,7 @@ async function refresh() {
   [S.members, S.events, S.rsvps, S.att, S.guests, S.matches, S.goals, S.lineups, S.fines, S.notices] = await Promise.all(
     ['members','events','rsvps','attendance','event_guests','matches','goals','lineups','fines','notices'].map(t => fetchAll(t)));
   try { S.leaves = await fetchAll('leave_passes'); } catch (e) { S.leaves = []; }
+  try { S.legacy = await fetchAll('attendance_legacy'); } catch (e) { S.legacy = []; }
   sortAll();
   S.me = S.members.find(m => m.id === S.me.id) || S.me;
 }
@@ -357,6 +358,10 @@ function playedOf(eid) {
   return set;
 }
 function cheerOf(eid) { const p = playedOf(eid); return new Set(S.att.filter(a => a.event_id === eid && a.cheer && !p.has(a.member_id)).map(a => a.member_id)); }
+// 앱 이전 출석(엑셀에서 불러온 월별 횟수). 앱에 출석 체크 기록이 있는 달은 앱 기록을 우선
+function appRegMonths() { const s = new Set(); S.att.forEach(a => { const e = evById(a.event_id); if (e && e.kind === 'regular') s.add(ym(new Date(e.starts_at))); }); return s; }
+function legacyOf(mid) { const am = appRegMonths(); return (S.legacy || []).filter(l => l.member_id === mid && !am.has(l.month) && l.count > 0); }
+const legacySum = mid => legacyOf(mid).reduce((a, l) => a + l.count, 0);
 function statsFor(id) {
   const reg = new Set(S.events.filter(e => e.kind === 'regular').map(e => e.id));
   const mine = S.att.filter(a => a.member_id === id && reg.has(a.event_id));
@@ -366,7 +371,7 @@ function statsFor(id) {
   const since = m?.joined_on ? new Date(m.joined_on) : m ? new Date(m.created_at) : new Date(0);
   const held = S.events.filter(e => e.kind === 'regular' && new Date(e.starts_at) >= since && new Date(e.starts_at) < new Date() && S.att.some(a => a.event_id === e.id)).length;
   const qs = new Set(S.lineups.filter(l => l.member_id === id).map(l => l.match_id + '-' + l.quarter)).size;
-  return { total: mine.length, month, rate: held ? Math.min(100, Math.round(mine.length / held * 100)) : 0,
+  return { total: mine.length + legacySum(id), month, rate: held ? Math.min(100, Math.round(mine.length / held * 100)) : 0,
     goals: S.goals.filter(g => g.scorer_id === id && !g.own_goal).length, assists: S.goals.filter(g => g.assist_id === id).length, quarters: qs };
 }
 function matchScore(mt) { const ours = S.goals.filter(g => g.match_id === mt.id).length; const res = ours > mt.their_score ? 'W' : ours < mt.their_score ? 'L' : 'D'; return { ours, theirs: mt.their_score, res }; }
@@ -690,6 +695,7 @@ function renderMatches(main) {
   S.att.filter(a => evById(a.event_id)?.kind === 'regular').forEach(a => inc(attCnt, a.member_id));
   const cheer = {};
   S.events.filter(e => e.kind === 'match').forEach(e => { playedOf(e.id).forEach(id => inc(attCnt, id)); cheerOf(e.id).forEach(id => inc(cheer, id)); });
+  players().forEach(p => { const n = legacySum(p.id); if (n) attCnt[p.id] = (attCnt[p.id] || 0) + n; });
   const attRank = Object.entries(attCnt).filter(([id]) => players().some(p => p.id === id)).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
   const cheerRank = Object.entries(cheer).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, n]) => [id, n + '회']);
   const tagOf = m => m.status === 'live' ? ['match', 'LIVE'] : m.status === 'scheduled' ? ['scheduled', '예정'] : [matchScore(m).res, { W: '승', D: '무', L: '패' }[matchScore(m).res]];
@@ -938,10 +944,16 @@ function attHistoryHtml(mid) {
       else if (cheerOf(e.id).has(mid)) rows.push([e, '응원', 'guest']);
     } else if (a) rows.push([e, '참여', 'other']);
   });
-  if (!rows.length) return '<div class="empty">출석 기록이 없습니다</div>';
+  const leg = {}; legacyOf(mid).forEach(l => leg[l.month] = l.count);
+  if (!rows.length && !Object.keys(leg).length) return '<div class="empty">출석 기록이 없습니다</div>';
   rows.sort((x, y) => new Date(y[0].starts_at) - new Date(x[0].starts_at));
   const byM = {}; rows.forEach(r => { const k = ym(new Date(r[0].starts_at)); (byM[k] = byM[k] || []).push(r); });
-  return Object.entries(byM).map(([k, rs]) => {
+  Object.keys(leg).forEach(k => { byM[k] = byM[k] || []; });
+  return Object.entries(byM).sort((a, b) => b[0].localeCompare(a[0])).map(([k, rs]) => {
+    if (leg[k] && !rs.some(r => r[0].kind === 'regular')) {
+      return `<div style="margin-top:10px"><div class="row between small"><b>${k.slice(0, 4)}년 ${monthLabel(k)}</b><span class="muted">정기 ${leg[k]}회</span></div>
+        <div class="chipline"><span class="chip">이전 출석부 기록 ${leg[k]}회</span>${rs.map(([e, l, c]) => `<span class="chip">${kst(e.starts_at).date.slice(5).replace('-', '/')} <span class="tag ${c}" style="font-size:10px;padding:0 5px">${l}</span></span>`).join('')}</div></div>`;
+    }
     const reg = rs.filter(r => r[0].kind === 'regular' && (r[1] === '출석' || r[1] === '지각')).length;
     return `<div style="margin-top:10px"><div class="row between small"><b>${k.slice(0, 4)}년 ${monthLabel(k)}</b><span class="muted">정기 ${reg}회${rs.length > reg ? ` · 기타 ${rs.length - reg}` : ''}</span></div>
       <div class="chipline">${rs.map(([e, l, c]) => `<span class="chip" title="${esc(e.title)}">${kst(e.starts_at).date.slice(5).replace('-', '/')} <span class="tag ${c}" style="font-size:10px;padding:0 5px">${l}</span></span>`).join('')}</div></div>`;
@@ -1181,7 +1193,7 @@ async function doPaste() { const t = val('pt').trim(); if (!t) return; const r =
 const BACKUP = [
   ['members', '회원'], ['events', '일정'], ['rsvps', '참석투표'], ['rsvp_log', '투표기록'], ['attendance', '출석'],
   ['event_guests', '게스트'], ['matches', '경기'], ['goals', '골'], ['lineups', '출전명단'], ['monthly_status', '월상태'],
-  ['dues', '회비'], ['transactions', '입출금'], ['fines', '벌금'], ['leave_passes', '휴가권'], ['notices', '공지'], ['suggestions', '소리함'], ['notification_log', '알림기록']
+  ['dues', '회비'], ['transactions', '입출금'], ['fines', '벌금'], ['leave_passes', '휴가권'], ['attendance_legacy', '이전출석'], ['notices', '공지'], ['suggestions', '소리함'], ['notification_log', '알림기록']
 ];
 function loadXlsx() {
   return window.XLSX ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => no(new Error('엑셀 도구를 불러오지 못했습니다')); document.head.appendChild(sc); });
